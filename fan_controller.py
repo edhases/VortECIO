@@ -9,6 +9,7 @@ class FanController:
         self.control_thread = None
         self.last_speed = {}
         self.sensor_errors = 0
+        self.fan_states = {}  # Tracks the control state, e.g., 'active' or 'released'
 
     def start(self):
         if self.control_thread and self.control_thread.is_alive():
@@ -30,67 +31,76 @@ class FanController:
 
     def control_loop(self):
         while not self.stop_event.is_set():
-            if self.app_logic.fan_control_disabled:
-                self.stop_event.wait(3.0)
+            parser = self.app_logic.nbfc_parser
+            if not parser or not parser.fans:
+                self.stop_event.wait(2.0)
                 continue
 
-            # Check if any fan is active before polling sensors
-            is_any_fan_active = False
-            if self.app_logic.nbfc_parser and self.app_logic.nbfc_parser.fans:
-                for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
-                    slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
-                    if not slider_var:
-                        continue
+            poll_interval_s = parser.ec_poll_interval / 1000.0
+            all_fans_disabled = True
 
-                    min_val = fan['min_speed']
-                    disabled_val = min_val - 2
+            # Sensor reading logic (only if not in deep sleep)
+            current_temp = None
+            should_poll_sensors = False
+            for i, fan in enumerate(parser.fans):
+                 slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
+                 if slider_var and slider_var.get() != (fan['min_speed'] - 2): # not disabled
+                     should_poll_sensors = True
+                     break
 
-                    if slider_var.get() != disabled_val:
-                        is_any_fan_active = True
-                        break  # Found an active fan, no need to check others
+            if should_poll_sensors:
+                sensor = self.app_logic.get_active_sensor()
+                if sensor:
+                    cpu_temp, gpu_temp = sensor.get_temperatures()
+                    self.app_logic.main_window.after(0, self.app_logic.main_window.update_temp_readings, cpu_temp, gpu_temp)
+                    temps = [t for t in (cpu_temp, gpu_temp) if t is not None]
+                    if temps:
+                        current_temp = max(temps)
+                        self.sensor_errors = 0
+                    else:
+                        self.sensor_errors += 1
+                        if self.sensor_errors * poll_interval_s >= 10:
+                            self.trigger_panic_mode()
+                            continue
 
-            if not is_any_fan_active:
-                self.stop_event.wait(2.0)  # Deep Sleep for 2 seconds
-                continue
-
-            sensor = self.app_logic.get_active_sensor()
-            if not sensor:
-                self.stop_event.wait(3.0)
-                continue
-
-            cpu_temp, gpu_temp = sensor.get_temperatures()
-
-            # Update the UI with the new temperature readings
-            self.app_logic.main_window.after(0, self.app_logic.main_window.update_temp_readings, cpu_temp, gpu_temp)
-
-            # Use the higher of the two for fan control logic
-            temps = [t for t in (cpu_temp, gpu_temp) if t is not None]
-            if not temps:
-                current_temp = None
-            else:
-                current_temp = max(temps)
-
-            if current_temp is None:
-                self.sensor_errors += 1
-                if self.sensor_errors * 3 >= 10: # Panic after 10s of sensor failure
-                    self.trigger_panic_mode()
-                    continue
-            else:
-                self.sensor_errors = 0
-
-            for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
+            for i, fan in enumerate(parser.fans):
                 slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
                 if not slider_var:
                     continue
 
-                max_val = fan['max_speed']
+                fan_mode = slider_var.get()
+                min_val, max_val = fan['min_speed'], fan['max_speed']
+                disabled_val, read_only_val = min_val - 2, min_val - 1
                 auto_val = max_val + 1
 
-                if slider_var.get() == auto_val:
-                    new_speed = self._get_speed_for_temp(i, fan, current_temp)
-                    self.app_logic.set_fan_speed_internal(i, new_speed)
+                is_active_control = fan_mode not in (disabled_val, read_only_val)
 
-            self.stop_event.wait(3.0)
+                if fan_mode != disabled_val:
+                    all_fans_disabled = False
+
+                if is_active_control:
+                    # STATE: Active Control (Manual or Auto)
+                    self.fan_states[i] = 'active'
+
+                    speed_to_write = 0
+                    if fan_mode == auto_val:
+                        speed_to_write = self._get_speed_for_temp(i, fan, current_temp) if current_temp is not None else self.last_speed.get(i, 0)
+                    else: # Manual
+                        speed_to_write = fan_mode
+
+                    self.app_logic.set_fan_speed_internal(i, speed_to_write)
+
+                else:
+                    # STATE: Passive Control (Disabled or Read-Only)
+                    if self.fan_states.get(i) != 'released':
+                        self.app_logic.set_fan_speed_internal(i, fan['reset_val'], force_write=True)
+                        self.fan_states[i] = 'released'
+
+            # Determine sleep duration
+            if all_fans_disabled:
+                self.stop_event.wait(2.0)  # Deep sleep
+            else:
+                self.stop_event.wait(poll_interval_s)
 
     def _get_speed_for_temp(self, fan_index, fan_config, temp):
         last_speed = self.last_speed.get(fan_index, 0)
@@ -98,23 +108,19 @@ class FanController:
         new_speed = last_speed
 
         if not thresholds:
-            return last_speed  # No thresholds defined, maintain current speed
+            return last_speed
 
-        # Determine if temperature is above the highest 'Up' threshold
         if temp > thresholds[-1][0]:
             new_speed = thresholds[-1][2]
         else:
-            # Find the correct speed for the current temperature going up
             for up, down, speed in thresholds:
                 if temp >= up and last_speed < speed:
                     new_speed = speed
                     break
 
-        # Determine if temperature is below the lowest 'Down' threshold
         if temp < thresholds[0][1]:
             new_speed = thresholds[0][2]
         else:
-            # Find the correct speed for the current temperature going down
             for up, down, speed in reversed(thresholds):
                 if temp <= down and last_speed > speed:
                     new_speed = speed
