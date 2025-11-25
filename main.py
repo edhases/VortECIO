@@ -4,16 +4,26 @@ import os
 import time
 import sys
 import threading
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import messagebox
+
+from ui.main_window import MainWindow
+from config import AppConfig
+from fan_controller import FanController, PsutilTempSensor
+from plugin_manager import PluginManager
+from system_tray import SystemTray
+import themes
+import localization
+
+if sys.platform == 'win32':
+    import winreg
 
 # --- EC CONSTANTS (ACPI Standard) ---
-EC_SC = 0x66  # Status/Command Port
-EC_DATA = 0x62  # Data Port
+EC_SC = 0x66
+EC_DATA = 0x62
 EC_CMD_READ = 0x80
 EC_CMD_WRITE = 0x81
-EC_IBF = 0x02  # Input Buffer Full mask
-EC_OBF = 0x01  # Output Buffer Full mask
+EC_IBF = 0x02
+EC_OBF = 0x01
 
 
 class EcDriver:
@@ -37,70 +47,47 @@ class EcDriver:
             if not self.inpout.IsInpOutDriverOpen():
                 return False
             return True
-        except Exception as e:
+        except (OSError, AttributeError) as e:
             print(f"Driver load error: {e}")
             return False
 
     def _wait_ibf(self):
-        # Використовуємо perf_counter для надточного вимірювання часу
-        # Таймаут 0.1 секунди (100 мс) зазвичай достатньо
         timeout = 0.1
         start = time.perf_counter()
-
         while (time.perf_counter() - start) < timeout:
             status = self.inpout.Inp32(EC_SC)
             if not (status & EC_IBF):
                 return True
-            # Не робимо sleep() взагалі, або дуже малий
-            # Це називається "Spin lock" - навантажує одне ядро на 100мс, але дає миттєву реакцію
             pass
-
         return False
 
     def _wait_obf(self):
         timeout = 0.1
         start = time.perf_counter()
-
         while (time.perf_counter() - start) < timeout:
             status = self.inpout.Inp32(EC_SC)
             if (status & EC_OBF):
                 return True
             pass
-
         return False
 
     def read_register(self, register):
         if not self.is_initialized: return None
-
-        # Протокол читання:
-        # 1. Чекаємо IBF -> Пишемо CMD_READ (0x80)
         if not self._wait_ibf(): return None
         self.inpout.Out32(EC_SC, EC_CMD_READ)
-
-        # 2. Чекаємо IBF -> Пишемо адресу регістру
         if not self._wait_ibf(): return None
         self.inpout.Out32(EC_DATA, register)
-
-        # 3. Чекаємо OBF -> Читаємо результат
         if not self._wait_obf(): return None
         return self.inpout.Inp32(EC_DATA)
 
     def write_register(self, register, value):
         if not self.is_initialized: return False
-
-        # Протокол запису:
-        # 1. Чекаємо IBF -> Пишемо CMD_WRITE (0x81)
         if not self._wait_ibf(): return False
         self.inpout.Out32(EC_SC, EC_CMD_WRITE)
-
-        # 2. Чекаємо IBF -> Пишемо адресу регістру
         if not self._wait_ibf(): return False
         self.inpout.Out32(EC_DATA, register)
-
-        # 3. Чекаємо IBF -> Пишемо значення
         if not self._wait_ibf(): return False
         self.inpout.Out32(EC_DATA, value)
-
         return True
 
 
@@ -116,208 +103,210 @@ class NbfcConfigParser:
         try:
             tree = ET.parse(self.file)
             root = tree.getroot()
-
             model_node = root.find('NotebookModel')
             if model_node is not None:
                 self.model_name = model_node.text
-
             self.fans.clear()
             for fan_config in root.findall('.//FanConfiguration'):
-                # Find the 'Name' element and get its text, otherwise default
                 name_node = fan_config.find('Name')
                 fan_name = name_node.text if name_node is not None else 'Unnamed Fan'
-
                 fan = {
                     'name': fan_name,
                     'read_reg': int(fan_config.find('ReadRegister').text),
                     'write_reg': int(fan_config.find('WriteRegister').text),
                     'min_speed': int(fan_config.find('MinSpeedValue').text),
                     'max_speed': int(fan_config.find('MaxSpeedValue').text),
+                    'temp_thresholds': []
                 }
+                thresholds_node = fan_config.find('TemperatureThresholds')
+                if thresholds_node is not None:
+                    for threshold in thresholds_node.findall('TemperatureThreshold'):
+                        up = int(threshold.find('UpThreshold').text)
+                        down = int(threshold.find('DownThreshold').text)
+                        speed = int(float(threshold.find('FanSpeed').text))
+                        fan['temp_thresholds'].append((up, down, speed))
                 self.fans.append(fan)
             return True
-        except Exception as e:
-            messagebox.showerror("XML Parse Error", f"Failed to parse XML: {e}")
+        except ET.ParseError:
             return False
 
 
-class App(tk.Tk):
+class AppLogic:
     def __init__(self):
-        super().__init__()
-        self.title("VortECIO Fan Control")
-        self.geometry("450x380")
-
+        self.config = AppConfig()
         self.driver = EcDriver()
         self.nbfc_parser = NbfcConfigParser(None)
-
-        self.fan_vars = {}
-        self.stop_event = threading.Event()  # Для зупинки потоку при виході
+        self.stop_event = threading.Event()
         self.update_thread = None
+        self.temp_sensor = PsutilTempSensor()
+        self.fan_controller = FanController(self, self.temp_sensor)
+        self.system_tray = SystemTray(self)
 
-        self.create_widgets()
+        # Setup localization
+        localization.set_language(self.config.get("language"))
 
-        # Обробка закриття вікна, щоб зупинити потік
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.main_window = MainWindow(self)
 
-    def create_widgets(self):
-        style = ttk.Style(self)
-        style.theme_use('clam')
+        # Apply theme now that the window exists
+        self.apply_theme(self.config.get("theme"))
 
-        menubar = tk.Menu(self)
-        self.config(menu=menubar)
+        self._load_last_config()
 
-        file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Load Config", command=self.load_config_file)
-        file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.on_closing)
+        # Initialize Plugin Manager
+        self.plugin_manager = PluginManager(self)
+        self.plugin_manager.discover_plugins()
+        self.plugin_manager.initialize_plugins()
+        self.fan_controller.start()
 
-        self.main_frame = ttk.Frame(self, padding="10")
-        self.main_frame.pack(expand=True, fill='both')
+    def apply_theme(self, theme_name):
+        self.config.set("theme", theme_name)
+        if hasattr(self, 'main_window'):
+            themes.apply_theme(self.main_window, theme_name)
 
-        self.msg_label = ttk.Label(self.main_frame, text="Load an NBFC config file via the File menu.")
-        self.msg_label.pack(pady=20)
+    def set_language(self, lang_code):
+        self.config.set("language", lang_code)
+        localization.set_language(lang_code)
+        self.main_window.recreate_ui()
 
-        self.status_bar = ttk.Frame(self, relief='sunken', padding="2 5")
-        self.status_bar.pack(side='bottom', fill='x')
-
-        self.model_label = ttk.Label(self.status_bar, text=f"Model: {self.nbfc_parser.model_name}")
-        self.model_label.pack(side='left')
-
-        driver_status = "OK" if self.driver.is_initialized else "ERROR"
-        self.driver_label = ttk.Label(self.status_bar, text=f"Driver: {driver_status}")
-        self.driver_label.pack(side='right')
-
-    def load_config_file(self):
-        filepath = filedialog.askopenfilename(
-            title="Select NBFC Config File",
-            filetypes=(("XML files", "*.xml"), ("All files", "*.*"))
-        )
-        if not filepath:
-            return
-
-        # Зупиняємо попередній потік, якщо був
+    def _load_config(self, filepath):
         if self.update_thread and self.update_thread.is_alive():
             self.stop_event.set()
-            # Чекаємо трохи, щоб потік завершився
             self.update_thread.join(timeout=1.0)
-            self.stop_event.clear()
 
-        self.nbfc_parser = NbfcConfigParser(filepath)
-        if self.nbfc_parser.parse():
-            self.model_label.config(text=f"Model: {self.nbfc_parser.model_name}")
-            if hasattr(self, 'msg_label') and self.msg_label:
-                self.msg_label.destroy()
+        parser = NbfcConfigParser(filepath)
+        if parser.parse():
+            self.nbfc_parser = parser
+            self.config.set("last_config_path", filepath)
+            self.main_window.model_label.config(text=f"Model: {self.nbfc_parser.model_name}")
+            self.main_window.create_fan_widgets(self.nbfc_parser.fans)
 
-            self._create_fan_widgets()
-
-            # Запускаємо потік оновлення
             self.stop_event.clear()
             self.update_thread = threading.Thread(target=self.update_loop, daemon=True)
             self.update_thread.start()
         else:
+            self.config.set("last_config_path", None)
             self.nbfc_parser = NbfcConfigParser(None)
-            self.model_label.config(text="Model: No config loaded")
+            self.main_window.model_label.config(text="Model: No config loaded")
+            self.main_window.create_fan_widgets([]) # Clear fan widgets
 
-    def _create_fan_widgets(self):
-        for widget in self.main_frame.winfo_children():
-            widget.destroy()
+    def _load_last_config(self):
+        last_config = self.config.get("last_config_path")
+        if last_config:
+            self._load_config(last_config)
 
-        if not self.nbfc_parser.fans:
-            ttk.Label(self.main_frame, text="No fans found.").pack(pady=20)
-            return
-
-        for i, fan in enumerate(self.nbfc_parser.fans):
-            fan_frame = ttk.LabelFrame(self.main_frame, text=fan['name'], padding="10")
-            fan_frame.pack(fill='x', padx=5, pady=5)
-
-            read_frame = ttk.Frame(fan_frame)
-            read_frame.pack(fill='x')
-            ttk.Label(read_frame, text="Current Value:").pack(side='left')
-
-            read_var = tk.StringVar(value="Waiting...")
-            self.fan_vars[f'fan_{i}_read'] = read_var
-            ttk.Label(read_frame, textvariable=read_var, width=15).pack(side='left', padx=5)
-
-            write_frame = ttk.Frame(fan_frame)
-            write_frame.pack(fill='x', pady=5)
-
-            min_val, max_val = fan['min_speed'], fan['max_speed']
-
-            slider_var = tk.IntVar(value=min_val)
-            self.fan_vars[f'fan_{i}_write'] = slider_var
-
-            ttk.Label(write_frame, text=f"Set ({min_val}-{max_val}):").pack(side='left')
-
-            slider = ttk.Scale(write_frame, from_=min_val, to=max_val, orient='horizontal', variable=slider_var,
-                               command=lambda v, idx=i: self._update_slider_label(v, idx))
-            slider.pack(side='left', fill='x', expand=True, padx=5)
-
-            slider_label_var = tk.StringVar(value=f"{min_val}")
-            self.fan_vars[f'fan_{i}_slider_label'] = slider_label_var
-            ttk.Label(write_frame, textvariable=slider_label_var, width=5).pack(side='left')
-
-            apply_button = ttk.Button(fan_frame, text="Apply",
-                                      command=lambda idx=i: self.set_fan_speed(idx))
-            apply_button.pack(anchor='e', pady=(5, 0))
-
-    def _update_slider_label(self, value, fan_index):
-        val = int(float(value))
-        self.fan_vars[f'fan_{fan_index}_slider_label'].set(f"{val}")
+    def load_config_file(self):
+        filepath = self.main_window.get_selected_filepath()
+        if filepath:
+            self._load_config(filepath)
 
     def set_fan_speed(self, fan_index):
-        # Запуск запису в окремому потоці, щоб не блокувати GUI
-        threading.Thread(target=self._set_fan_speed_thread, args=(fan_index,)).start()
+        slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
+        if not slider_var:
+            return
 
-    def _set_fan_speed_thread(self, fan_index):
+        fan = self.nbfc_parser.fans[fan_index]
+        min_val = fan['min_speed']
+        max_val = fan['max_speed']
+        disabled_val = min_val - 2
+        read_only_val = min_val - 1
+        auto_val = max_val + 1
+
+        # If the slider is set to "Auto", "Read-only", or "Disabled", we don't do anything here.
+        if slider_var.get() in (auto_val, read_only_val, disabled_val):
+            return
+
+        self.set_fan_speed_internal(fan_index, slider_var.get())
+
+    def set_fan_speed_internal(self, fan_index, speed):
+        threading.Thread(target=self._set_fan_speed_thread, args=(fan_index, speed)).start()
+
+    def _set_fan_speed_thread(self, fan_index, speed):
         fan = self.nbfc_parser.fans[fan_index]
         write_reg = fan['write_reg']
-        value = self.fan_vars[f'fan_{fan_index}_write'].get()
-
-        print(f"[Thread] Setting fan #{fan_index} (reg: {write_reg}) to {value}")
-        success = self.driver.write_register(write_reg, value)
-        if not success:
-            print(f"[Error] Failed to write to register {write_reg}")
+        self.driver.write_register(write_reg, speed)
 
     def update_loop(self):
-        print("Background update loop started.")
         while not self.stop_event.is_set():
             if self.nbfc_parser and self.nbfc_parser.fans:
                 for i, fan in enumerate(self.nbfc_parser.fans):
-                    read_reg = fan['read_reg']
+                    slider_var = self.main_window.fan_vars.get(f'fan_{i}_write')
+                    if not slider_var:
+                        continue
 
-                    value = self.driver.read_register(read_reg)
+                    min_val = fan['min_speed']
+                    disabled_val = min_val - 2
 
-                    # Якщо value == None (Timeout), просто пропускаємо оновлення
-                    # Інтерфейс буде показувати старе значення, замість миготіння TIMEOUT
-                    if value is not None:
-                        if f'fan_{i}_read' in self.fan_vars:
-                            self.fan_vars[f'fan_{i}_read'].set(f"{value}")
-
+                    if slider_var.get() != disabled_val:
+                        read_reg = fan['read_reg']
+                        value = self.driver.read_register(read_reg)
+                        if value is not None:
+                            self.main_window.update_fan_readings(i, value)
             self.stop_event.wait(2.0)
-
-            # Чекаємо 2 секунди (з можливістю переривання)
-            self.stop_event.wait(2.0)
-        print("Background update loop stopped.")
 
     def on_closing(self):
+        # Hide the window instead of closing it
+        self.main_window.withdraw()
+
+    def quit(self):
         self.stop_event.set()
-        self.destroy()
+        if self.update_thread and self.update_thread.is_alive():
+            self.update_thread.join(timeout=1.0)
+        self.fan_controller.stop()
+        self.plugin_manager.shutdown_plugins()
+        self.system_tray.icon.stop()
+        self.main_window.quit()
+
+    def run(self):
+        if sys.platform == 'win32':
+            self.system_tray.create_icon()
+
+        if '--start-in-tray' in sys.argv and sys.platform == 'win32':
+            self.main_window.withdraw()
+        else:
+            self.main_window.deiconify()
+
+        self.main_window.mainloop()
+
+    def toggle_autostart(self):
+        autostart = self.main_window.autostart_var.get()
+        self.config.set("autostart", autostart)
+
+        if sys.platform == 'win32':
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            app_name = "VortECIO"
+
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
+                if autostart:
+                    executable_path = sys.executable
+                    # If running from a bundled executable, sys.executable is the path to the exe
+                    # If running from a script, we need to build the command
+                    if executable_path.endswith("python.exe") or executable_path.endswith("pythonw.exe"):
+                         script_path = os.path.abspath(__file__)
+                         value = f'"{executable_path}" "{script_path}" --start-in-tray'
+                    else: # Assuming bundled executable
+                        value = f'"{executable_path}" --start-in-tray'
+
+                    winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, value)
+                else:
+                    winreg.DeleteValue(key, app_name)
+                winreg.CloseKey(key)
+            except OSError as e:
+                print(f"Failed to update registry for autostart: {e}")
 
 
 def main():
     if sys.platform == 'win32':
         try:
             is_admin = ctypes.windll.shell32.IsUserAnAdmin()
-        except Exception:
+        except AttributeError:
             is_admin = False
-
         if not is_admin:
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
             sys.exit(0)
 
-    app = App()
-    app.mainloop()
+    app = AppLogic()
+    app.run()
 
 
 if __name__ == "__main__":
