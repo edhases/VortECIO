@@ -2,11 +2,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import os
 
+from ..localization import translate
+
 class PluginManagerWindow(tk.Toplevel):
     def __init__(self, parent, app_logic):
         super().__init__(parent)
         self.app_logic = app_logic
-        self.title("Manage Plugins")
+        self.title(translate("manage_plugins_title"))
         self.geometry("300x400")
 
         self.plugin_vars = {}
@@ -19,7 +21,7 @@ class PluginManagerWindow(tk.Toplevel):
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(expand=True, fill='both')
 
-        label = ttk.Label(main_frame, text="Select active plugins:")
+        label = ttk.Label(main_frame, text=translate("select_active_plugins_label"))
         label.pack(anchor='w', pady=(0, 10))
 
         plugin_folder = "plugins"
@@ -40,5 +42,5 @@ class PluginManagerWindow(tk.Toplevel):
         if self.changed:
             active_plugins = [name for name, var in self.plugin_vars.items() if var.get()]
             self.app_logic.config.set("active_plugins", active_plugins)
-            messagebox.showinfo("Restart Required", "Please restart the application to apply plugin changes.")
+            messagebox.showinfo(translate("restart_required_title"), translate("restart_required_msg"))
         self.destroy()

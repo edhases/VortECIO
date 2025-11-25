@@ -41,8 +41,13 @@ class NbfcConfigParser:
                 self.model_name = model_node.text
             self.fans.clear()
             for fan_config in root.findall('.//FanConfiguration'):
-                name_node = fan_config.find('Name')
-                fan_name = name_node.text if name_node is not None else 'Unnamed Fan'
+                display_name_node = fan_config.find('FanDisplayName')
+                if display_name_node is not None and display_name_node.text:
+                    fan_name = display_name_node.text
+                else:
+                    name_node = fan_config.find('Name')
+                    fan_name = name_node.text if name_node is not None else 'Unnamed Fan'
+
                 fan = {
                     'name': fan_name,
                     'read_reg': int(fan_config.find('ReadRegister').text),
@@ -233,7 +238,8 @@ class AppLogic:
             self.update_thread.join(timeout=1.0)
         self.fan_controller.stop()
         self.plugin_manager.shutdown_plugins()
-        self.system_tray.icon.stop()
+        if self.system_tray.icon:
+            self.system_tray.icon.stop()
         self.main_window.quit()
 
     def run(self):
