@@ -6,9 +6,12 @@ import sys
 import threading
 from tkinter import messagebox
 
+from hardware import EcDriver
+import wmi
+import pythoncom
 from ui.main_window import MainWindow
 from config import AppConfig
-from fan_controller import FanController, PsutilTempSensor
+from fan_controller import FanController
 from plugin_manager import PluginManager
 from system_tray import SystemTray
 import themes
@@ -17,78 +20,6 @@ import localization
 if sys.platform == 'win32':
     import winreg
 
-# --- EC CONSTANTS (ACPI Standard) ---
-EC_SC = 0x66
-EC_DATA = 0x62
-EC_CMD_READ = 0x80
-EC_CMD_WRITE = 0x81
-EC_IBF = 0x02
-EC_OBF = 0x01
-
-
-class EcDriver:
-    def __init__(self, dll_name='inpoutx64.dll'):
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        self.dll_path = os.path.join(base_path, dll_name)
-        self.inpout = None
-        self.is_initialized = self._load_driver()
-
-    def _load_driver(self):
-        if not os.path.exists(self.dll_path):
-            print(f"Error: {self.dll_path} not found")
-            return False
-        try:
-            self.inpout = ctypes.windll.LoadLibrary(self.dll_path)
-            self.inpout.IsInpOutDriverOpen.restype = ctypes.c_int
-            self.inpout.Out32.argtypes = [ctypes.c_ushort, ctypes.c_ushort]
-            self.inpout.Inp32.argtypes = [ctypes.c_ushort]
-            self.inpout.Inp32.restype = ctypes.c_ushort
-
-            if not self.inpout.IsInpOutDriverOpen():
-                return False
-            return True
-        except (OSError, AttributeError) as e:
-            print(f"Driver load error: {e}")
-            return False
-
-    def _wait_ibf(self):
-        timeout = 0.1
-        start = time.perf_counter()
-        while (time.perf_counter() - start) < timeout:
-            status = self.inpout.Inp32(EC_SC)
-            if not (status & EC_IBF):
-                return True
-            pass
-        return False
-
-    def _wait_obf(self):
-        timeout = 0.1
-        start = time.perf_counter()
-        while (time.perf_counter() - start) < timeout:
-            status = self.inpout.Inp32(EC_SC)
-            if (status & EC_OBF):
-                return True
-            pass
-        return False
-
-    def read_register(self, register):
-        if not self.is_initialized: return None
-        if not self._wait_ibf(): return None
-        self.inpout.Out32(EC_SC, EC_CMD_READ)
-        if not self._wait_ibf(): return None
-        self.inpout.Out32(EC_DATA, register)
-        if not self._wait_obf(): return None
-        return self.inpout.Inp32(EC_DATA)
-
-    def write_register(self, register, value):
-        if not self.is_initialized: return False
-        if not self._wait_ibf(): return False
-        self.inpout.Out32(EC_SC, EC_CMD_WRITE)
-        if not self._wait_ibf(): return False
-        self.inpout.Out32(EC_DATA, register)
-        if not self._wait_ibf(): return False
-        self.inpout.Out32(EC_DATA, value)
-        return True
 
 
 class NbfcConfigParser:
@@ -131,6 +62,23 @@ class NbfcConfigParser:
             return False
 
 
+class WmiTempSensor:
+    def get_temperature(self):
+        try:
+            pythoncom.CoInitialize()
+            w = wmi.WMI(namespace="root\\wmi")
+            temps = w.MSAcpi_ThermalZoneTemperature()
+            # Search for the maximum temperature > 20°C
+            max_t = 0
+            for t in temps:
+                c = (t.CurrentTemperature - 2732) / 10.0
+                if c > max_t: max_t = c
+            return max_t if max_t > 0 else 45.0
+        except Exception:
+            return 45.0 # Return a fallback value in case of an error
+        finally:
+            pythoncom.CoUninitialize()
+
 class AppLogic:
     def __init__(self):
         self.config = AppConfig()
@@ -138,9 +86,11 @@ class AppLogic:
         self.nbfc_parser = NbfcConfigParser(None)
         self.stop_event = threading.Event()
         self.update_thread = None
-        self.temp_sensor = PsutilTempSensor()
-        self.fan_controller = FanController(self, self.temp_sensor)
+        self.default_sensor = WmiTempSensor()
+        self.plugin_sensor = None
+        self.fan_controller = FanController(self)
         self.system_tray = SystemTray(self)
+        self.fan_control_disabled = False
 
         # Setup localization
         localization.set_language(self.config.get("language"))
@@ -157,6 +107,16 @@ class AppLogic:
         self.plugin_manager.discover_plugins()
         self.plugin_manager.initialize_plugins()
         self.fan_controller.start()
+
+    def get_active_sensor(self):
+        # Якщо плагін зареєстрував сенсор — використовуємо його
+        if self.plugin_sensor:
+            return self.plugin_sensor
+        return self.default_sensor
+
+    def register_sensor(self, sensor_instance):
+        print(f"New sensor registered: {sensor_instance}")
+        self.plugin_sensor = sensor_instance
 
     def apply_theme(self, theme_name):
         self.config.set("theme", theme_name)
@@ -218,9 +178,26 @@ class AppLogic:
         self.set_fan_speed_internal(fan_index, slider_var.get())
 
     def set_fan_speed_internal(self, fan_index, speed):
+        if self.fan_control_disabled:
+            return
+
+        slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
+        if not slider_var:
+            return
+
+        fan = self.nbfc_parser.fans[fan_index]
+        min_val = fan['min_speed']
+        disabled_val = min_val - 2
+        read_only_val = min_val - 1
+
+        if slider_var.get() in (read_only_val, disabled_val):
+            return
+
         threading.Thread(target=self._set_fan_speed_thread, args=(fan_index, speed)).start()
 
     def _set_fan_speed_thread(self, fan_index, speed):
+        if self.fan_control_disabled:
+            return
         fan = self.nbfc_parser.fans[fan_index]
         write_reg = fan['write_reg']
         self.driver.write_register(write_reg, speed)
@@ -239,6 +216,7 @@ class AppLogic:
                     if slider_var.get() != disabled_val:
                         read_reg = fan['read_reg']
                         value = self.driver.read_register(read_reg)
+                        print(f"Fan {i} (read_reg: {read_reg}): Raw value = {value}") # RPM logging
                         if value is not None:
                             self.main_window.update_fan_readings(i, value)
             self.stop_event.wait(2.0)
@@ -258,7 +236,7 @@ class AppLogic:
 
     def run(self):
         if sys.platform == 'win32':
-            self.system_tray.create_icon()
+            threading.Thread(target=self.system_tray.create_icon, daemon=True).start()
 
         if '--start-in-tray' in sys.argv and sys.platform == 'win32':
             self.main_window.withdraw()
