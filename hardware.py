@@ -15,7 +15,7 @@ class EcDriver:
         base_path = os.path.dirname(os.path.abspath(__file__))
         self.dll_path = os.path.join(base_path, dll_name)
         self.inpout = None
-        self.lock = threading.Lock() # Захист від колізій потоків
+        self.lock = threading.Lock() # Thread safety lock
         self._load_driver()
 
     def _load_driver(self):

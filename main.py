@@ -68,14 +68,16 @@ class WmiTempSensor:
             pythoncom.CoInitialize()
             w = wmi.WMI(namespace="root\\wmi")
             temps = w.MSAcpi_ThermalZoneTemperature()
-            # Шукаємо максимальну температуру > 20°C
+            # Search for the maximum temperature > 20°C
             max_t = 0
             for t in temps:
                 c = (t.CurrentTemperature - 2732) / 10.0
                 if c > max_t: max_t = c
-            pythoncom.CoUninitialize()
             return max_t if max_t > 0 else 45.0
-        except: return 45.0
+        except Exception:
+            return 45.0 # Return a fallback value in case of an error
+        finally:
+            pythoncom.CoUninitialize()
 
 class AppLogic:
     def __init__(self):
@@ -85,9 +87,10 @@ class AppLogic:
         self.stop_event = threading.Event()
         self.update_thread = None
         self.default_sensor = WmiTempSensor()
-        self.plugin_sensor = None # Сюди писатиме плагін HWiNFO
-        self.fan_controller = FanController(self) # Передаємо self, а не сенсор
+        self.plugin_sensor = None
+        self.fan_controller = FanController(self)
         self.system_tray = SystemTray(self)
+        self.fan_control_disabled = False
 
         # Setup localization
         localization.set_language(self.config.get("language"))
@@ -175,9 +178,26 @@ class AppLogic:
         self.set_fan_speed_internal(fan_index, slider_var.get())
 
     def set_fan_speed_internal(self, fan_index, speed):
+        if self.fan_control_disabled:
+            return
+
+        slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
+        if not slider_var:
+            return
+
+        fan = self.nbfc_parser.fans[fan_index]
+        min_val = fan['min_speed']
+        disabled_val = min_val - 2
+        read_only_val = min_val - 1
+
+        if slider_var.get() in (read_only_val, disabled_val):
+            return
+
         threading.Thread(target=self._set_fan_speed_thread, args=(fan_index, speed)).start()
 
     def _set_fan_speed_thread(self, fan_index, speed):
+        if self.fan_control_disabled:
+            return
         fan = self.nbfc_parser.fans[fan_index]
         write_reg = fan['write_reg']
         self.driver.write_register(write_reg, speed)
@@ -196,6 +216,7 @@ class AppLogic:
                     if slider_var.get() != disabled_val:
                         read_reg = fan['read_reg']
                         value = self.driver.read_register(read_reg)
+                        print(f"Fan {i} (read_reg: {read_reg}): Raw value = {value}") # RPM logging
                         if value is not None:
                             self.main_window.update_fan_readings(i, value)
             self.stop_event.wait(2.0)
@@ -215,7 +236,7 @@ class AppLogic:
 
     def run(self):
         if sys.platform == 'win32':
-            self.system_tray.create_icon()
+            threading.Thread(target=self.system_tray.create_icon, daemon=True).start()
 
         if '--start-in-tray' in sys.argv and sys.platform == 'win32':
             self.main_window.withdraw()
