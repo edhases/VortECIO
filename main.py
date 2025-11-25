@@ -87,6 +87,10 @@ class WmiTempSensor:
         finally:
             pythoncom.CoUninitialize()
 
+    def get_temperatures(self):
+        # Fallback sensor only provides one temperature, return it as CPU temp
+        return self.get_temperature(), None
+
 class AppLogic:
     def __init__(self):
         self.config = AppConfig()
