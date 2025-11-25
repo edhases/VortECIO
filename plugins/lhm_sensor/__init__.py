@@ -77,23 +77,19 @@ class LhmSensor:
                     logger.debug(f"    [{sensor.SensorType}] {sensor.Name}: {sensor.Value}")
         logger.info("=========================")
 
-    def get_temperature(self):
+    def get_temperatures(self):
         """
-        Reads the highest temperature from available CPU and GPU sensors.
-        Returns: float - The highest temperature in °C.
+        Reads CPU and GPU temperatures separately.
+        Returns: tuple(float, float) - CPU and GPU temperatures in °C.
         """
         cpu_temp = self._get_cpu_temperature()
         gpu_temp = self.get_gpu_temperature()
 
         if cpu_temp is None and gpu_temp is None:
-            logger.error("No CPU or GPU temperature sensors found!")
-            return 45.0  # Safe default
+            logger.warning("No CPU or GPU temperature sensors found!")
+            return None, None
 
-        # Return the maximum of available temperatures
-        highest_temp = max(filter(None, [cpu_temp, gpu_temp]))
-        logger.debug(f"Highest temp selected: {highest_temp}°C (CPU: {cpu_temp}, GPU: {gpu_temp})")
-
-        return highest_temp
+        return cpu_temp, gpu_temp
 
     def _get_cpu_temperature(self):
         """Helper to get the most reliable CPU temperature."""
