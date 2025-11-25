@@ -108,6 +108,10 @@ class AppLogic:
         # Apply theme now that the window exists
         self.apply_theme(self.config.get("theme"))
 
+        # Defer starting background tasks until the main loop is running
+        self.main_window.after(100, self.start_background_tasks)
+
+    def start_background_tasks(self):
         self._load_last_config()
 
         # Initialize Plugin Manager

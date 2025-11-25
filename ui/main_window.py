@@ -25,7 +25,7 @@ class MainWindow(ctk.CTk):
 
         self.fan_vars = {}
         self.title(translate("app_title"))
-        self.geometry("450x550") # Adjusted height after removing graph
+        self.geometry("550x550") # Adjusted height and width
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -152,23 +152,20 @@ class MainWindow(ctk.CTk):
 
             # Current speed display
             ctk.CTkLabel(fan_frame, text=translate("current_speed_rpm_label")).grid(row=1, column=0, sticky="w", padx=10)
-            read_var = tk.StringVar(value="N/A")
-            self.fan_vars[f'fan_{i}_read'] = read_var
-            ctk.CTkLabel(fan_frame, textvariable=read_var).grid(row=1, column=1, sticky="w", padx=5)
-
-            # Current percentage display
-            percent_var = tk.StringVar(value="(Auto)")
+            percent_var = tk.StringVar(value="N/A")
             self.fan_vars[f'fan_{i}_percent'] = percent_var
-            ctk.CTkLabel(fan_frame, textvariable=percent_var, font=ctk.CTkFont(size=12, slant="italic")).grid(row=1, column=2, sticky="e", padx=10)
+            ctk.CTkLabel(fan_frame, textvariable=percent_var).grid(row=1, column=1, sticky="w", padx=5)
 
             # Manual control slider
             min_val, max_val = fan['min_speed'], fan['max_speed']
-            auto_val = max_val + 1 # Special value for Auto
+            disabled_val = min_val - 2
+            read_only_val = min_val - 1
+            auto_val = max_val + 1
 
             slider_var = tk.IntVar(value=auto_val)
             self.fan_vars[f'fan_{i}_write'] = slider_var
 
-            slider = ctk.CTkSlider(fan_frame, from_=min_val, to=auto_val, variable=slider_var,
+            slider = ctk.CTkSlider(fan_frame, from_=disabled_val, to=auto_val, variable=slider_var,
                                    command=lambda v, idx=i: self.update_slider_label(v, idx))
             slider.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
             self.fan_vars[f'fan_{i}_slider'] = slider
@@ -198,8 +195,9 @@ class MainWindow(ctk.CTk):
             if not slider_var or not label_var:
                 continue
 
-            # Sync sliders to auto mode
-            if i != fan_index and is_auto_mode and slider_var.get() != val:
+            current_slider_val = slider_var.get()
+
+            if i != fan_index and is_special_mode and current_slider_val != val:
                 slider_var.set(val)
 
             current_val_for_label = slider_var.get()
@@ -209,17 +207,22 @@ class MainWindow(ctk.CTk):
                 label_var.set(f"{current_val_for_label}%")
 
     def update_fan_readings(self, fan_index, rpm_value, percent_value):
-        if f'fan_{fan_index}_read' in self.fan_vars:
-            self.fan_vars[f'fan_{fan_index}_read'].set(f"{rpm_value}")
         if f'fan_{fan_index}_percent' in self.fan_vars:
             slider_var = self.fan_vars.get(f'fan_{fan_index}_write')
-            is_auto = slider_var.get() == self.app_logic.nbfc_parser.fans[fan_index]['max_speed'] + 1 if slider_var else False
-            mode_str = translate("slider_auto") if is_auto else ""
-            self.fan_vars[f'fan_{fan_index}_percent'].set(f"({percent_value}% {mode_str})")
+            min_val = self.app_logic.nbfc_parser.fans[fan_index]['min_speed']
+            disabled_val = min_val - 2
+
+            if slider_var and slider_var.get() == disabled_val:
+                display_value = "Off"
+            else:
+                display_value = f"{percent_value}%"
+            self.fan_vars[f'fan_{fan_index}_percent'].set(display_value)
 
     def update_temp_readings(self, cpu_temp, gpu_temp):
-        self.cpu_temp_label.configure(text=f"CPU: {cpu_temp}°C" if cpu_temp is not None else "CPU: N/A")
-        self.gpu_temp_label.configure(text=f"GPU: {gpu_temp}°C" if gpu_temp is not None else "GPU: N/A")
+        cpu_text = f"CPU: {int(cpu_temp)}°C" if cpu_temp is not None else "CPU: N/A"
+        gpu_text = f"GPU: {int(gpu_temp)}°C" if gpu_temp is not None else "GPU: N/A"
+        self.cpu_temp_label.configure(text=cpu_text)
+        self.gpu_temp_label.configure(text=gpu_text)
 
     def show_error(self, title, message):
         messagebox.showerror(title, message)
