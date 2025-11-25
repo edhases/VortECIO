@@ -34,6 +34,25 @@ class FanController:
                 self.stop_event.wait(3.0)
                 continue
 
+            # Check if any fan is active before polling sensors
+            is_any_fan_active = False
+            if self.app_logic.nbfc_parser and self.app_logic.nbfc_parser.fans:
+                for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
+                    slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
+                    if not slider_var:
+                        continue
+
+                    min_val = fan['min_speed']
+                    disabled_val = min_val - 2
+
+                    if slider_var.get() != disabled_val:
+                        is_any_fan_active = True
+                        break  # Found an active fan, no need to check others
+
+            if not is_any_fan_active:
+                self.stop_event.wait(2.0)  # Deep Sleep for 2 seconds
+                continue
+
             sensor = self.app_logic.get_active_sensor()
             if not sensor:
                 self.stop_event.wait(3.0)
