@@ -2,6 +2,7 @@ import ctypes
 import xml.etree.ElementTree as ET
 import os
 import logging
+from logger import setup_logger, get_logger
 import time
 import sys
 import threading
@@ -275,6 +276,7 @@ class AppLogic:
 
 
 def main():
+    setup_logger()
     if sys.platform == 'win32':
         try:
             is_admin = ctypes.windll.shell32.IsUserAnAdmin()
