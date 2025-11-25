@@ -50,7 +50,12 @@ class MainWindow(ctk.CTk):
         # Settings Menu
         self.settings_menu_var = tk.StringVar(value=translate("settings_menu"))
         self.settings_menu = ctk.CTkOptionMenu(self.menu_bar, variable=self.settings_menu_var,
-                                               values=[translate("theme_light"), translate("theme_dark"), "", translate("lang_en"), translate("lang_uk")],
+                                               values=[
+                                                   translate("theme_light"), translate("theme_dark"),
+                                                   "",
+                                                   translate("lang_en"), translate("lang_de"), translate("lang_pl"),
+                                                   translate("lang_uk"), translate("lang_ja")
+                                               ],
                                                command=self.settings_menu_callback)
         self.settings_menu.pack(side="left", padx=5)
 
@@ -116,8 +121,14 @@ class MainWindow(ctk.CTk):
             self.app_logic.apply_theme("dark")
         elif choice == translate("lang_en"):
             self.app_logic.set_language("en")
+        elif choice == translate("lang_de"):
+            self.app_logic.set_language("de")
+        elif choice == translate("lang_pl"):
+            self.app_logic.set_language("pl")
         elif choice == translate("lang_uk"):
             self.app_logic.set_language("uk")
+        elif choice == translate("lang_ja"):
+            self.app_logic.set_language("ja")
         self.settings_menu_var.set(translate("settings_menu"))
 
     def open_plugin_manager(self):

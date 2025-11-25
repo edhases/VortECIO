@@ -147,7 +147,7 @@ class AppLogic:
         if parser.parse():
             self.nbfc_parser = parser
             self.config.set("last_config_path", filepath)
-            self.main_window.model_label.config(text=f"Model: {self.nbfc_parser.model_name}")
+            self.main_window.model_label.configure(text=f"Model: {self.nbfc_parser.model_name}")
             self.main_window.create_fan_widgets(self.nbfc_parser.fans)
 
             self.stop_event.clear()
@@ -156,7 +156,7 @@ class AppLogic:
         else:
             self.config.set("last_config_path", None)
             self.nbfc_parser = NbfcConfigParser(None)
-            self.main_window.model_label.config(text="Model: No config loaded")
+            self.main_window.model_label.configure(text="Model: No config loaded")
             self.main_window.create_fan_widgets([]) # Clear fan widgets
 
     def _load_last_config(self):
