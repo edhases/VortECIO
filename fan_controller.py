@@ -39,16 +39,25 @@ class FanController:
                 self.stop_event.wait(3.0)
                 continue
 
-            current_temp = sensor.get_temperature()
+            cpu_temp, gpu_temp = sensor.get_temperatures()
+
+            # Update the UI with the new temperature readings
+            self.app_logic.main_window.after(0, self.app_logic.main_window.update_temp_readings, cpu_temp, gpu_temp)
+
+            # Use the higher of the two for fan control logic
+            temps = [t for t in (cpu_temp, gpu_temp) if t is not None]
+            if not temps:
+                current_temp = None
+            else:
+                current_temp = max(temps)
 
             if current_temp is None:
                 self.sensor_errors += 1
-                if self.sensor_errors * 3 >= 10:
+                if self.sensor_errors * 3 >= 10: # Panic after 10s of sensor failure
                     self.trigger_panic_mode()
                     continue
             else:
                 self.sensor_errors = 0
-                self.app_logic.main_window.after(0, self.app_logic.main_window.temp_graph.add_temperature, current_temp)
 
             for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
                 slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
@@ -94,3 +103,6 @@ class FanController:
 
         self.last_speed[fan_index] = new_speed
         return new_speed
+
+    def set_last_speed(self, fan_index, speed):
+        self.last_speed[fan_index] = speed

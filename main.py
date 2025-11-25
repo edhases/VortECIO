@@ -16,6 +16,7 @@ from config import AppConfig
 from fan_controller import FanController
 from plugin_manager import PluginManager
 from system_tray import SystemTray
+import customtkinter as ctk
 import themes
 import localization
 
@@ -127,8 +128,10 @@ class AppLogic:
 
     def apply_theme(self, theme_name):
         self.config.set("theme", theme_name)
-        if hasattr(self, 'main_window'):
-            themes.apply_theme(self.main_window, theme_name)
+        # customtkinter handles the theme switching internally
+        valid_themes = ["light", "dark"] # Add "system" if you want to support it
+        if theme_name in valid_themes:
+            ctk.set_appearance_mode(theme_name)
 
     def set_language(self, lang_code):
         self.config.set("language", lang_code)
@@ -144,7 +147,7 @@ class AppLogic:
         if parser.parse():
             self.nbfc_parser = parser
             self.config.set("last_config_path", filepath)
-            self.main_window.model_label.config(text=f"Model: {self.nbfc_parser.model_name}")
+            self.main_window.model_label.configure(text=f"Model: {self.nbfc_parser.model_name}")
             self.main_window.create_fan_widgets(self.nbfc_parser.fans)
 
             self.stop_event.clear()
@@ -153,7 +156,7 @@ class AppLogic:
         else:
             self.config.set("last_config_path", None)
             self.nbfc_parser = NbfcConfigParser(None)
-            self.main_window.model_label.config(text="Model: No config loaded")
+            self.main_window.model_label.configure(text="Model: No config loaded")
             self.main_window.create_fan_widgets([]) # Clear fan widgets
 
     def _load_last_config(self):
@@ -207,6 +210,10 @@ class AppLogic:
             return
         fan = self.nbfc_parser.fans[fan_index]
         write_reg = fan['write_reg']
+
+        # Store the speed that is about to be written
+        self.fan_controller.set_last_speed(fan_index, speed)
+
         self.driver.write_register(write_reg, speed)
 
     def update_loop(self):
@@ -231,10 +238,19 @@ class AppLogic:
                 threading.Thread(target=self._read_and_update_fan, args=(i, read_reg)).start()
 
     def _read_and_update_fan(self, fan_index, read_reg):
-        value = self.driver.read_register(read_reg)
-        if value is not None:
+        rpm_value = self.driver.read_register(read_reg)
+        if rpm_value is not None:
+            fan = self.nbfc_parser.fans[fan_index]
+            min_speed = fan['min_speed']
+            max_speed = fan['max_speed']
+
+            # Track last written speed for accuracy.
+            last_speed = self.fan_controller.last_speed.get(fan_index, 0)
+
+            percent_value = max(0, min(100, int((last_speed / max_speed) * 100))) if max_speed > 0 else 0
+
             # Schedule the UI update on the main thread
-            self.main_window.after(0, self.main_window.update_fan_readings, fan_index, value)
+            self.main_window.after(0, self.main_window.update_fan_readings, fan_index, rpm_value, percent_value)
 
     def on_closing(self):
         # Hide the window instead of closing it
