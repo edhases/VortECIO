@@ -7,188 +7,81 @@
 <a name="ukrainian"></a>
 ## 🇺🇦 Українська версія
 
-### 📋 Опис
+### 📋 Опис програми
 
-**VortECIO** - це сучасна альтернатива NoteBook FanControl (NBFC), написана на Python. Програма забезпечує автоматичне та ручне керування вентиляторами ноутбука з підтримкою NBFC конфігурацій.
+**VortECIO** — це сучасна, легка та потужна утиліта для керування системою охолодження ноутбуків. Вона створена як сучасна альтернатива класичному NoteBook FanControl (NBFC), забезпечуючи повну сумісність з його конфігураційними файлами, але з використанням новітніх технологій інтерфейсу та моніторингу.
 
-### ✨ Особливості
+Програма дозволяє користувачам взяти під повний контроль швидкість обертання вентиляторів, щоб досягти ідеального балансу між тишею та продуктивністю системи.
 
-- 🌡️ **Точний моніторинг температури** через LibreHardwareMonitor
-- 🔧 **Повна сумісність з NBFC конфігураціями** (XML формат)
-- 🎛️ **Гнучке керування** - автоматичний та ручний режими
-- 🔌 **Система плагінів** для розширення функціоналу
-- 📊 **Графік температури** в реальному часі
-- 🌍 **Багатомовність** (Українська, English, Deutsch, Polski, 日本語)
-- 🎨 **Теми оформлення** (Light, Dark, Black)
-- 💾 **System Tray** підтримка
-- 📝 **Детальне логування** для дебагу
+### ✨ Ключові можливості та переваги
 
-### 📦 Вимоги
+* **Сумісність з NBFC:** Повна підтримка файлів конфігурації `.xml` від NoteBook FanControl. Ви можете використовувати вже існуючі профілі для сотень моделей ноутбуків.
+* **Точний моніторинг (LHM):** Інтеграція з **LibreHardwareMonitor** забезпечує миттєве та точне зчитування температури процесора (включно з температурою ядер) та відеокарти, що є значно надійнішим за стандартні методи WMI.
+* **Гнучкі режими керування:**
+    * **Automatic:** Плавне регулювання швидкості вентиляторів на основі кривої температур, визначеної у конфігурації.
+    * **Manual:** Ручне встановлення фіксованої швидкості за допомогою зручного повзунка.
+    * **Read-only:** Режим моніторингу, що дозволяє спостерігати за показниками без втручання в роботу системи.
+    * **Disabled:** Повне вимкнення керування (повернення до заводських налаштувань BIOS/EC).
+* **Сучасний інтерфейс:** Стильний GUI, написаний на `customtkinter`, з підтримкою **Темної** та **Світлої** тем, що гармонійно виглядає в Windows 10/11.
+* **Робота в фоні:** Підтримка згортання в системний трей (System Tray) та автоматичний запуск разом з Windows.
+* **Мультимовність:** Інтерфейс перекладено багатьма мовами: Українська, Англійська, Німецька, Польська, Японська.
 
-**Системні вимоги:**
-- Windows 10/11 (64-bit)
-- Права адміністратора (для доступу до EC регістрів)
-- .NET Framework 4.7.2+ (для LibreHardwareMonitor)
+### 🛡️ Безпека
 
-**Python залежності:**
-Python 3.8+
-pythonnet >= 3.0.0
-pystray >= 0.19.4
-pillow >= 9.0.0
+VortECIO має вбудовану систему захисту. Якщо програма втрачає зв'язок із температурними сенсорами, вона автоматично переходить у безпечний режим, повертаючи керування вентиляторами системі (BIOS), щоб уникнути перегріву.
 
-text
+### 🧩 Архітектура
 
-### 🚀 Встановлення
+Програма використовує модульну архітектуру плагінів. Основний модуль сенсорів (`lhm_sensor`) працює ізольовано, що забезпечує стабільність основної програми. Взаємодія з Embedded Controller (EC) ноутбука здійснюється через перевірений часом драйвер `InpOutx64`.
 
-#### 1. Клонування репозиторію
-git clone https://github.com/yourusername/VortECIO.git
-cd VortECIO
+### 🤝 Подяки та Кредити
 
-text
+Цей проєкт став можливим завдяки чудовим інструментам та спільноті Open Source:
 
-#### 2. Встановлення залежностей
-pip install -r requirements.txt
+* **NoteBook FanControl (NBFC):** За натхнення, стандартизацію конфігураційних файлів та дослідження в області керування EC.
+* **LibreHardwareMonitor:** За чудову бібліотеку моніторингу апаратного забезпечення.
+* **CustomTkinter:** За можливість створення сучасного та естетичного інтерфейсу користувача.
+* **Highresolution Enterprises:** За драйвер `InpOut32/x64`, що дозволяє прямий доступ до апаратних портів.
+* **Icon8:** За графічні ресурси (іконки).
 
-text
+---
 
-#### 3. Налаштування LibreHardwareMonitor
+<a name="english"></a>
+## 🇬🇧 English Version
 
-**Завантажити:**
-- Перейдіть на https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases
-- Завантажте останню версію
-- Розпакуйте `LibreHardwareMonitorLib.dll`
+### 📋 Description
 
-**Розмістити:**
-Скопіюйте DLL в папку плагіну
-copy LibreHardwareMonitorLib.dll plugins\lhm_sensor\
+**VortECIO** is a modern, lightweight, and powerful utility for laptop cooling system control. Designed as a contemporary alternative to the classic NoteBook FanControl (NBFC), it maintains full compatibility with NBFC configuration files while leveraging modern UI technologies and monitoring methods.
 
-text
+The application allows users to take full control of fan speeds, achieving the perfect balance between silence and system performance.
 
-#### 4. Перевірка встановлення
-python test_lhm.py
+### ✨ Key Features & Advantages
 
-text
+* **NBFC Compatibility:** Full support for NoteBook FanControl `.xml` configuration files. You can use existing profiles created for hundreds of laptop models.
+* **Precise Monitoring (LHM):** Integration with **LibreHardwareMonitor** ensures instant and accurate reading of CPU (including per-core) and GPU temperatures, offering significantly higher reliability than standard WMI methods.
+* **Flexible Control Modes:**
+    * **Automatic:** Smooth fan speed adjustment based on the temperature curve defined in the configuration.
+    * **Manual:** Set a fixed speed manually using a convenient slider.
+    * **Read-only:** Monitoring mode that allows observing metrics without interfering with system operation.
+    * **Disabled:** Completely disables control (reverts to factory BIOS/EC settings).
+* **Modern UI:** Stylish GUI built with `customtkinter`, supporting both **Dark** and **Light** themes, blending perfectly with Windows 10/11.
+* **Background Operation:** Supports minimizing to the System Tray and automatically starting with Windows.
+* **Multi-language Support:** The interface is translated into multiple languages: English, Ukrainian, German, Polish, Japanese.
 
-Якщо всі тести пройдені ✅ - можна запускати програму!
+### 🛡️ Safety
 
-### 🎮 Використання
+VortECIO features a built-in safety system. If the application loses connection with temperature sensors, it automatically triggers a failsafe mode, returning fan control to the system (BIOS) to prevent overheating.
 
-#### Запуск програми
-Стандартний запуск (з GUI)
-python main.py
+### 🧩 Architecture
 
-Запуск у system tray
-python main.py --start-in-tray
+The program utilizes a modular plugin architecture. The primary sensor module (`lhm_sensor`) operates in isolation, ensuring the stability of the main application. Interaction with the laptop's Embedded Controller (EC) is handled via the time-tested `InpOutx64` driver.
 
-text
+### 🤝 Acknowledgments & Credits
 
-#### Перший запуск
+This project was made possible thanks to amazing tools and the Open Source community:
 
-1. **Завантажити конфігурацію:**
-   - `File → Load Config`
-   - Виберіть XML конфігурацію для вашого ноутбука
-
-2. **Налаштувати режим вентиляторів:**
-   - **Auto** - автоматичне керування по температурі
-   - **Manual** - ручне встановлення швидкості (%)
-   - **Read-only** - тільки моніторинг
-   - **Disabled** - вимкнено
-
-3. **Увімкнути плагіни:**
-   - `Settings → Plugins → Manage Plugins`
-   - Увімкніть `lhm_sensor` (рекомендовано)
-
-### 📁 Структура проєкту
-
-VortECIO/
-├── main.py # Головний файл
-├── logger.py # Система логування
-├── config.py # Конфігурація
-├── hardware.py # EC драйвер (InpOutx64)
-├── fan_controller.py # Логіка контролю вентиляторів
-├── plugin_manager.py # Менеджер плагінів
-├── requirements.txt # Python залежності
-├── inpoutx64.dll # Драйвер для EC доступу
-│
-├── ui/ # Інтерфейс
-│ ├── main_window.py # Головне вікно
-│ ├── temperature_graph.py # Графік температури
-│ └── plugin_manager_window.py
-│
-├── plugins/ # Плагіни
-│ └── lhm_sensor/ # LibreHardwareMonitor сенсор
-│ ├── init.py
-│ ├── LibreHardwareMonitorLib.dll
-│ └── README.md
-│
-├── logs/ # Логи (автоматично)
-└── configs/ # NBFC конфігурації (опціонально)
-
-text
-
-### 🔌 Плагіни
-
-#### LibreHardwareMonitor Sensor (lhm_sensor)
-
-**Основний плагін** для моніторингу температури та RPM вентиляторів.
-
-**Можливості:**
-- Температура CPU (per-core та package)
-- Температура GPU (NVIDIA/AMD/Intel)
-- Обороти вентиляторів (RPM)
-- Напруга та інші метрики
-
-**Увімкнення:**
-1. `Settings → Plugins → Manage Plugins`
-2. Поставте галочку біля `lhm_sensor`
-3. Перезапустіть програму
-
-#### Створення власних плагінів
-
-plugins/my_sensor/init.py
-from logger import get_logger
-
-logger = get_logger('MySensor')
-
-class MySensor:
-def get_temperature(self):
-# Ваша логіка читання температури
-return 45.0
-
-def register(app_logic):
-sensor = MySensor()
-app_logic.register_sensor(sensor)
-logger.info("MySensor registered")
-return sensor
-
-text
-
-### 🛠️ Конфігурація
-
-#### NBFC XML конфігурації
-
-VortECIO підтримує стандартні NBFC конфігурації:
-
-<?xml version="1.0"?> <FanControlConfigV2> <NotebookModel>HP Pavilion Gaming 15</NotebookModel> <Author>Your Name</Author> <EcPollInterval>1000</EcPollInterval> <FanConfigurations> <FanConfiguration> <ReadRegister>47</ReadRegister> <WriteRegister>45</WriteRegister> <MinSpeedValue>0</MinSpeedValue> <MaxSpeedValue>100</MaxSpeedValue> <FanDisplayName>CPU</FanDisplayName>
-text
-  <TemperatureThresholds>
-    <TemperatureThreshold>
-      <UpThreshold>60</UpThreshold>
-      <DownThreshold>0</DownThreshold>
-      <FanSpeed>0</FanSpeed>
-    </TemperatureThreshold>
-    <!-- Додаткові пороги... -->
-  </TemperatureThresholds>
-</FanConfiguration>
-</FanConfigurations> </FanControlConfigV2> ```
-settings.json
-Користувацькі налаштування зберігаються автоматично:
-
-text
-{
-    "last_config_path": "configs/my_laptop.xml",
-    "theme": "dark",
-    "language": "uk",
-    "autostart": true,
-    "active_plugins": ["lhm_sensor"]
-}
+* **NoteBook FanControl (NBFC):** For inspiration, standardization of configuration files, and research into EC control.
+* **LibreHardwareMonitor:** For the excellent hardware monitoring library.
+* **CustomTkinter:** For enabling the creation of a modern and aesthetic user interface.
+* **Highresolution Enterprises:** For the `InpOut32/x64` driver, enabling direct hardware port access.
+* **Icon8:** For graphical resources (icons).
