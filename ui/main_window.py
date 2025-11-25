@@ -8,10 +8,12 @@ class MainWindow(tk.Tk):
     def __init__(self, app_logic):
         super().__init__()
         self.app_logic = app_logic
+        self.logger = get_logger('MainWindow')
         self.style = ttk.Style(self)
         self.fan_vars = {}
         self.recreate_ui()
         self.protocol("WM_DELETE_WINDOW", self.app_logic.on_closing)
+        self.logger.info("MainWindow initialized")
 
     def recreate_ui(self):
         # Destroy all widgets

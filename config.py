@@ -1,14 +1,17 @@
 import json
 import os
+from logger import get_logger
 
 class AppConfig:
     def __init__(self, file_name="settings.json"):
+        self.logger = get_logger('Config')
         self.file_name = file_name
         self.defaults = {
             "last_config_path": None,
             "theme": "light",
             "language": "en",
-            "autostart": False
+            "autostart": False,
+            "active_plugins": ["lhm_sensor"]  # LHM за замовчуванням!
         }
         self.config = self.defaults.copy()
         self.load()
@@ -18,26 +21,30 @@ class AppConfig:
             try:
                 with open(self.file_name, 'r') as f:
                     loaded_config = json.load(f)
-                    # Merge loaded config with defaults to ensure all keys are present
-                    self.config.update(loaded_config)
-            except (json.JSONDecodeError, TypeError):
-                print("Error reading config file. Using defaults.")
+                self.config.update(loaded_config)
+                self.logger.info(f"Config loaded from {self.file_name}")
+            except (json.JSONDecodeError, TypeError) as e:
+                self.logger.error(f"Error reading config: {e}")
                 self.config = self.defaults.copy()
         else:
-            print("Config file not found. Using defaults.")
-            # If the file doesn't exist, we just use the defaults
-            pass
+            self.logger.info("Config file not found, using defaults")
 
     def save(self):
         try:
             with open(self.file_name, 'w') as f:
                 json.dump(self.config, f, indent=4)
+            self.logger.debug("Config saved successfully")
         except IOError as e:
-            print(f"Error saving config file: {e}")
+            self.logger.error(f"Error saving config: {e}")
 
-    def get(self, key):
-        return self.config.get(key, self.defaults.get(key))
+    def get(self, key, default=None):
+        if key in self.config:
+            return self.config[key]
+        if key in self.defaults:
+            return self.defaults[key]
+        return default
 
     def set(self, key, value):
         self.config[key] = value
         self.save()
+        self.logger.debug(f"Config updated: {key} = {value}")

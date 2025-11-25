@@ -1,6 +1,8 @@
 import ctypes
 import xml.etree.ElementTree as ET
 import os
+import logging
+from logger import setup_logger, get_logger
 import time
 import sys
 import threading
