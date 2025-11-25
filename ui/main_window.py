@@ -1,15 +1,20 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from localization import translate
+from ui.plugin_manager_window import PluginManagerWindow
+from ui.temperature_graph import TemperatureGraph
+from logger import get_logger
 
 class MainWindow(tk.Tk):
     def __init__(self, app_logic):
         super().__init__()
         self.app_logic = app_logic
+        self.logger = get_logger('MainWindow')
         self.style = ttk.Style(self)
         self.fan_vars = {}
         self.recreate_ui()
         self.protocol("WM_DELETE_WINDOW", self.app_logic.on_closing)
+        self.logger.info("MainWindow initialized")
 
     def recreate_ui(self):
         # Destroy all widgets
@@ -21,7 +26,7 @@ class MainWindow(tk.Tk):
 
         # Set window title
         self.title(translate("app_title"))
-        self.geometry("450x450")
+        self.geometry("450x600")
 
         self.create_widgets()
 
@@ -65,6 +70,11 @@ class MainWindow(tk.Tk):
         self.autostart_var.set(self.app_logic.config.get("autostart"))
         settings_menu.add_checkbutton(label="Start with Windows", variable=self.autostart_var, command=self.app_logic.toggle_autostart)
 
+        # Plugins Menu
+        plugins_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Plugins", menu=plugins_menu)
+        plugins_menu.add_command(label="Manage Plugins...", command=self.open_plugin_manager)
+
         # Main frame
         self.main_frame = ttk.Frame(self, padding="10")
         self.main_frame.pack(expand=True, fill='both')
@@ -76,6 +86,10 @@ class MainWindow(tk.Tk):
         self.msg_label = ttk.Label(self.fan_display_frame, text=translate("no_config_loaded_msg"))
         self.msg_label.pack(pady=20)
 
+        # Temperature Graph
+        self.temp_graph = TemperatureGraph(self.main_frame, height=100)
+        self.temp_graph.pack(fill='x', pady=10)
+
         # Status bar
         self.status_bar = ttk.Frame(self, relief='sunken', padding="2 5", style="StatusBar.TFrame")
         self.status_bar.pack(side='bottom', fill='x')
@@ -86,6 +100,9 @@ class MainWindow(tk.Tk):
         driver_status = "OK" if self.app_logic.driver.is_initialized else "ERROR"
         self.driver_label = ttk.Label(self.status_bar, text=f"{translate('driver_label')}: {driver_status}")
         self.driver_label.pack(side='right')
+
+    def open_plugin_manager(self):
+        PluginManagerWindow(self, self.app_logic)
 
     def create_fan_widgets(self, fans):
         for widget in self.fan_display_frame.winfo_children():

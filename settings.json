@@ -2,5 +2,6 @@
     "last_config_path": null,
     "theme": "light",
     "language": "en",
-    "autostart": false
+    "autostart": false,
+    "active_plugins": []
 }
