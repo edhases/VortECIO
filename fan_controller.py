@@ -1,20 +1,10 @@
 import threading
-import psutil
-
-class PsutilTempSensor:
-    def get_temperature(self):
-        temps = psutil.sensors_temperatures()
-        if 'coretemp' in temps:
-            # Find the highest temperature among all cores
-            return max(t.current for t in temps['coretemp'])
-        # Fallback if 'coretemp' is not available
-        return 40.0
-
+import time
 
 class FanController:
-    def __init__(self, app_logic, temp_sensor):
+    def __init__(self, app_logic): # Прибираємо temp_sensor з __init__
         self.app_logic = app_logic
-        self.temp_sensor = temp_sensor
+        # Сенсор тепер беремо з app_logic (який може бути оновлений плагінами)
         self.stop_event = threading.Event()
         self.control_thread = None
         self.last_speed = {}
@@ -34,7 +24,12 @@ class FanController:
 
     def control_loop(self):
         while not self.stop_event.is_set():
-            current_temp = self.temp_sensor.get_temperature()
+            # Динамічно отримуємо поточний сенсор
+            sensor = self.app_logic.get_active_sensor()
+            if not sensor:
+                self.stop_event.wait(3.0)
+                continue
+            current_temp = sensor.get_temperature()
 
             for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
                 slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
@@ -58,7 +53,7 @@ class FanController:
                     # Do nothing
                     pass
 
-            self.stop_event.wait(5.0)
+            self.stop_event.wait(3.0) # Збільш інтервал до 3 сек для WMI
 
     def _get_speed_for_temp(self, fan_index, fan_config, temp):
         last_speed = self.last_speed.get(fan_index, 0)
