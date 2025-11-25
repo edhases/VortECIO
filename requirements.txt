@@ -2,3 +2,7 @@
 pythonnet>=3.0.0
 pystray>=0.19.4
 pillow>=9.0.0
+
+# Windows-специфічні залежності
+wmi; platform_system == "Windows"
+pywin32; platform_system == "Windows"

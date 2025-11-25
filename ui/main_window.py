@@ -1,8 +1,9 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from localization import translate
-from ui.plugin_manager_window import PluginManagerWindow
-from ui.temperature_graph import TemperatureGraph
+from ..logger import get_logger
+from ..localization import translate
+from .plugin_manager_window import PluginManagerWindow
+from .temperature_graph import TemperatureGraph
 
 class MainWindow(tk.Tk):
     def __init__(self, app_logic):
@@ -42,7 +43,8 @@ class MainWindow(tk.Tk):
         menubar.add_cascade(label=translate("file_menu"), menu=file_menu)
         file_menu.add_command(label=translate("load_config_menu"), command=self.app_logic.load_config_file)
         file_menu.add_separator()
-        file_menu.add_command(label=translate("exit_menu"), command=self.app_logic.on_closing)
+        file_menu.add_command(label=translate("hide_to_tray_menu"), command=self.app_logic.on_closing)
+        file_menu.add_command(label=translate("quit_menu"), command=self.app_logic.quit)
 
         # Settings Menu
         settings_menu = tk.Menu(menubar, tearoff=0)
@@ -51,28 +53,28 @@ class MainWindow(tk.Tk):
         # Theme Submenu
         theme_menu = tk.Menu(settings_menu, tearoff=0)
         settings_menu.add_cascade(label=translate("theme_menu"), menu=theme_menu)
-        theme_menu.add_command(label="Light", command=lambda: self.app_logic.apply_theme("light"))
-        theme_menu.add_command(label="Dark", command=lambda: self.app_logic.apply_theme("dark"))
-        theme_menu.add_command(label="Black", command=lambda: self.app_logic.apply_theme("black"))
+        theme_menu.add_command(label=translate("theme_light"), command=lambda: self.app_logic.apply_theme("light"))
+        theme_menu.add_command(label=translate("theme_dark"), command=lambda: self.app_logic.apply_theme("dark"))
+        theme_menu.add_command(label=translate("theme_black"), command=lambda: self.app_logic.apply_theme("black"))
 
         # Language Submenu
         lang_menu = tk.Menu(settings_menu, tearoff=0)
         settings_menu.add_cascade(label=translate("language_menu"), menu=lang_menu)
-        lang_menu.add_command(label="English", command=lambda: self.app_logic.set_language("en"))
-        lang_menu.add_command(label="Deutsch", command=lambda: self.app_logic.set_language("de"))
-        lang_menu.add_command(label="Polski", command=lambda: self.app_logic.set_language("pl"))
-        lang_menu.add_command(label="Українська", command=lambda: self.app_logic.set_language("uk"))
-        lang_menu.add_command(label="日本語", command=lambda: self.app_logic.set_language("ja"))
+        lang_menu.add_command(label=translate("lang_en"), command=lambda: self.app_logic.set_language("en"))
+        lang_menu.add_command(label=translate("lang_de"), command=lambda: self.app_logic.set_language("de"))
+        lang_menu.add_command(label=translate("lang_pl"), command=lambda: self.app_logic.set_language("pl"))
+        lang_menu.add_command(label=translate("lang_uk"), command=lambda: self.app_logic.set_language("uk"))
+        lang_menu.add_command(label=translate("lang_ja"), command=lambda: self.app_logic.set_language("ja"))
 
         settings_menu.add_separator()
         self.autostart_var = tk.BooleanVar()
         self.autostart_var.set(self.app_logic.config.get("autostart"))
-        settings_menu.add_checkbutton(label="Start with Windows", variable=self.autostart_var, command=self.app_logic.toggle_autostart)
+        settings_menu.add_checkbutton(label=translate("autostart_windows"), variable=self.autostart_var, command=self.app_logic.toggle_autostart)
 
         # Plugins Menu
         plugins_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Plugins", menu=plugins_menu)
-        plugins_menu.add_command(label="Manage Plugins...", command=self.open_plugin_manager)
+        menubar.add_cascade(label=translate("plugins_menu"), menu=plugins_menu)
+        plugins_menu.add_command(label=translate("manage_plugins_menu"), command=self.open_plugin_manager)
 
         # Main frame
         self.main_frame = ttk.Frame(self, padding="10")
@@ -86,7 +88,12 @@ class MainWindow(tk.Tk):
         self.msg_label.pack(pady=20)
 
         # Temperature Graph
-        self.temp_graph = TemperatureGraph(self.main_frame, height=100)
+        theme_colors = {
+            'background': self.style.lookup('TFrame', 'background'),
+            'foreground': self.style.lookup('TLabel', 'foreground'),
+            'line': '#00ff00'  # Or another color from the theme if available
+        }
+        self.temp_graph = TemperatureGraph(self.main_frame, theme_colors=theme_colors, height=100)
         self.temp_graph.pack(fill='x', pady=10)
 
         # Status bar
@@ -108,7 +115,7 @@ class MainWindow(tk.Tk):
             widget.destroy()
 
         if not fans:
-            self.msg_label = ttk.Label(self.fan_display_frame, text="No fans found in config.")
+            self.msg_label = ttk.Label(self.fan_display_frame, text=translate("no_fans_found_msg"))
             self.msg_label.pack(pady=20)
             return
 
@@ -116,11 +123,11 @@ class MainWindow(tk.Tk):
             fan_frame = ttk.LabelFrame(self.fan_display_frame, text=fan['name'], padding="10")
             fan_frame.pack(fill='x', padx=5, pady=5)
 
-            # Read-only value
+            # Read-only value (RPM)
             read_frame = ttk.Frame(fan_frame)
             read_frame.pack(fill='x')
-            ttk.Label(read_frame, text=translate("current_value_label")).pack(side='left')
-            read_var = tk.StringVar(value="Waiting...")
+            ttk.Label(read_frame, text=translate("current_speed_rpm_label")).pack(side='left')
+            read_var = tk.StringVar(value="N/A")
             self.fan_vars[f'fan_{i}_read'] = read_var
             ttk.Label(read_frame, textvariable=read_var, width=15).pack(side='left', padx=5)
 
@@ -154,22 +161,41 @@ class MainWindow(tk.Tk):
 
     def update_slider_label(self, value, fan_index):
         val = int(float(value))
-        min_val = self.app_logic.nbfc_parser.fans[fan_index]['min_speed']
-        max_val = self.app_logic.nbfc_parser.fans[fan_index]['max_speed']
+
+        # Determine the special values from the first fan's config
+        # (assuming they are consistent across all fans)
+        first_fan = self.app_logic.nbfc_parser.fans[0]
+        min_val = first_fan['min_speed']
+        max_val = first_fan['max_speed']
         disabled_val = min_val - 2
         read_only_val = min_val - 1
         auto_val = max_val + 1
 
-        label_var = self.fan_vars.get(f'fan_{fan_index}_slider_label')
-        if label_var:
-            if val == auto_val:
-                label_var.set("Auto")
-            elif val == read_only_val:
-                label_var.set("Read")
-            elif val == disabled_val:
-                label_var.set("Off")
+        is_special_mode = val in [disabled_val, read_only_val, auto_val]
+
+        for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
+            slider_var = self.fan_vars.get(f'fan_{i}_write')
+            label_var = self.fan_vars.get(f'fan_{i}_slider_label')
+
+            if not slider_var or not label_var:
+                continue
+
+            current_slider_val = slider_var.get()
+
+            # If a special mode is set on the triggering slider, sync all sliders
+            if i != fan_index and is_special_mode and current_slider_val != val:
+                slider_var.set(val)
+
+            # Update label for the current slider (whether it's the trigger or not)
+            current_val_for_label = slider_var.get()
+            if current_val_for_label == auto_val:
+                label_var.set(translate("slider_auto"))
+            elif current_val_for_label == read_only_val:
+                label_var.set(translate("slider_read"))
+            elif current_val_for_label == disabled_val:
+                label_var.set(translate("slider_off"))
             else:
-                label_var.set(f"{val}")
+                label_var.set(f"{current_val_for_label}")
 
     def update_fan_readings(self, fan_index, value):
         if f'fan_{fan_index}_read' in self.fan_vars:

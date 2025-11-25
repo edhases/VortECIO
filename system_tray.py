@@ -1,5 +1,6 @@
 from pystray import Icon, MenuItem, Menu
 from PIL import Image
+from localization import translate
 
 class SystemTray:
     def __init__(self, app_logic):
@@ -11,8 +12,8 @@ class SystemTray:
         image = Image.new('RGB', (64, 64), 'black')
 
         menu = Menu(
-            MenuItem('Show', self.on_show),
-            MenuItem('Exit', self.on_exit)
+            MenuItem(lambda text: translate("tray_show"), self.on_show),
+            MenuItem(lambda text: translate("tray_quit"), self.on_exit)
         )
 
         self.icon = Icon("VortECIO", image, "VortECIO Fan Control", menu)
