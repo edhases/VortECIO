@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Notebook>
+  <NotebookModel>HP Pavilion Gaming Laptop 15-ec2xxx</NotebookModel>
+  <Author>Your Name</Author>
+  <EcPollInterval>2000</EcPollInterval>
+  <ReadWriteWords>False</ReadWriteWords>
+  <FanConfigurations>
+    <FanConfiguration>
+      <Name>CPU Fan</Name>
+      <ReadRegister>1</ReadRegister>
+      <WriteRegister>1</WriteRegister>
+      <MinSpeedValue>0</MinSpeedValue>
+      <MaxSpeedValue>255</MaxSpeedValue>
+      <ResetRequired>False</ResetRequired>
+    </FanConfiguration>
+    <FanConfiguration>
+      <Name>GPU Fan</Name>
+      <ReadRegister>2</ReadRegister>
+      <WriteRegister>2</WriteRegister>
+      <MinSpeedValue>0</MinSpeedValue>
+      <MaxSpeedValue>255</MaxSpeedValue>
+      <ResetRequired>False</ResetRequired>
+    </FanConfiguration>
+  </FanConfigurations>
+</Notebook>
