@@ -212,21 +212,29 @@ class AppLogic:
     def update_loop(self):
         while not self.stop_event.is_set():
             if self.nbfc_parser and self.nbfc_parser.fans:
-                for i, fan in enumerate(self.nbfc_parser.fans):
-                    slider_var = self.main_window.fan_vars.get(f'fan_{i}_write')
-                    if not slider_var:
-                        continue
-
-                    min_val = fan['min_speed']
-                    disabled_val = min_val - 2
-
-                    if slider_var.get() != disabled_val:
-                        read_reg = fan['read_reg']
-                        value = self.driver.read_register(read_reg)
-                        print(f"Fan {i} (read_reg: {read_reg}): Raw value = {value}") # RPM logging
-                        if value is not None:
-                            self.main_window.update_fan_readings(i, value)
+                self.main_window.after(0, self._update_fan_readings_thread_safe)
             self.stop_event.wait(2.0)
+
+    def _update_fan_readings_thread_safe(self):
+        for i, fan in enumerate(self.nbfc_parser.fans):
+            slider_var = self.main_window.fan_vars.get(f'fan_{i}_write')
+            if not slider_var:
+                continue
+
+            min_val = fan['min_speed']
+            disabled_val = min_val - 2
+
+            # This check is now safe as it's running in the main thread
+            if slider_var.get() != disabled_val:
+                read_reg = fan['read_reg']
+                # Reading from the driver can be slow, so we do it in a separate thread
+                threading.Thread(target=self._read_and_update_fan, args=(i, read_reg)).start()
+
+    def _read_and_update_fan(self, fan_index, read_reg):
+        value = self.driver.read_register(read_reg)
+        if value is not None:
+            # Schedule the UI update on the main thread
+            self.main_window.after(0, self.main_window.update_fan_readings, fan_index, value)
 
     def on_closing(self):
         # Hide the window instead of closing it

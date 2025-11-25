@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import os
 
-from ..localization import translate
+from localization import translate
 
 class PluginManagerWindow(tk.Toplevel):
     def __init__(self, parent, app_logic):

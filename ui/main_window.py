@@ -1,9 +1,9 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from ..logger import get_logger
-from ..localization import translate
-from .plugin_manager_window import PluginManagerWindow
-from .temperature_graph import TemperatureGraph
+from logger import get_logger
+from localization import translate
+from ui.plugin_manager_window import PluginManagerWindow
+from ui.temperature_graph import TemperatureGraph
 
 class MainWindow(tk.Tk):
     def __init__(self, app_logic):

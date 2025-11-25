@@ -79,42 +79,54 @@ class LhmSensor:
 
     def get_temperature(self):
         """
-        Читання температури CPU (основний метод для NBFC)
-        Повертає: float - температура в °C
+        Reads the highest temperature from available CPU and GPU sensors.
+        Returns: float - The highest temperature in °C.
         """
-        try:
-            for hardware in self.computer.Hardware:
-                hardware.Update()
+        cpu_temp = self._get_cpu_temperature()
+        gpu_temp = self.get_gpu_temperature()
 
-                if hardware.HardwareType == HardwareType.Cpu:
-                    # Пріоритет: CPU Package або Core Average
-                    for sensor in hardware.Sensors:
-                        if sensor.SensorType == SensorType.Temperature:
-                            if sensor.Value is not None:
-                                # Шукаємо Package або Total
-                                if "Package" in sensor.Name or "CPU Package" in sensor.Name:
-                                    temp = float(sensor.Value)
-                                    logger.debug(f"CPU Temp (Package): {temp}°C")
-                                    return temp
-                                elif "Average" in sensor.Name or "Core Average" in sensor.Name:
-                                    temp = float(sensor.Value)
-                                    logger.debug(f"CPU Temp (Average): {temp}°C")
-                                    return temp
-
-                    # Fallback: перша доступна температура CPU
-                    for sensor in hardware.Sensors:
-                        if sensor.SensorType == SensorType.Temperature and sensor.Value:
-                            temp = float(sensor.Value)
-                            logger.warning(f"Using fallback CPU temp: {temp}°C from {sensor.Name}")
-                            return temp
-
-            # Якщо нічого не знайдено
-            logger.error("No CPU temperature sensor found!")
+        if cpu_temp is None and gpu_temp is None:
+            logger.error("No CPU or GPU temperature sensors found!")
             return 45.0  # Safe default
 
+        # Return the maximum of available temperatures
+        highest_temp = max(filter(None, [cpu_temp, gpu_temp]))
+        logger.debug(f"Highest temp selected: {highest_temp}°C (CPU: {cpu_temp}, GPU: {gpu_temp})")
+
+        return highest_temp
+
+    def _get_cpu_temperature(self):
+        """Helper to get the most reliable CPU temperature."""
+        try:
+            for hardware in self.computer.Hardware:
+                if hardware.HardwareType == HardwareType.Cpu:
+                    hardware.Update()
+
+                    package_sensor = None
+                    core_avg_sensor = None
+                    first_sensor = None
+
+                    for sensor in hardware.Sensors:
+                        if sensor.SensorType == SensorType.Temperature and sensor.Value is not None:
+                            if "Package" in sensor.Name or "CPU Package" in sensor.Name:
+                                package_sensor = sensor
+                                break # Priority 1: Package is the best
+                            if "Average" in sensor.Name or "Core Average" in sensor.Name:
+                                core_avg_sensor = sensor
+                            if first_sensor is None:
+                                first_sensor = sensor
+
+                    if package_sensor:
+                        return float(package_sensor.Value)
+                    if core_avg_sensor:
+                        return float(core_avg_sensor.Value)
+                    if first_sensor:
+                        logger.warning(f"Using fallback CPU temp from {first_sensor.Name}")
+                        return float(first_sensor.Value)
+            return None
         except Exception as e:
-            logger.error(f"Error reading temperature: {e}", exc_info=True)
-            return 45.0
+            logger.error(f"Error reading CPU temperature: {e}", exc_info=True)
+            return None
 
     def get_fan_rpm(self, fan_index=0):
         """
