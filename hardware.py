@@ -35,7 +35,7 @@ class EcDriver:
         start = time.perf_counter()
         while (time.perf_counter() - start) < timeout:
             if not (self.inpout.Inp32(EC_SC) & EC_IBF): return True
-            time.sleep(0.001) # <--- CRITICAL FIX
+            pass
         return False
 
     def _wait_obf(self):
@@ -43,7 +43,7 @@ class EcDriver:
         start = time.perf_counter()
         while (time.perf_counter() - start) < timeout:
             if (self.inpout.Inp32(EC_SC) & EC_OBF): return True
-            time.sleep(0.001) # <--- CRITICAL FIX
+            pass
         return False
 
     def read_register(self, reg):

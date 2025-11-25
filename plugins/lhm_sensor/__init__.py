@@ -135,9 +135,8 @@ class LhmSensor:
         """
         try:
             for hardware in self.computer.Hardware:
-                hardware.Update()
-
                 if hardware.HardwareType == HardwareType.Motherboard:
+                    hardware.Update()
                     # Зібрати всі fan sensors
                     fan_sensors = [s for s in hardware.Sensors
                                   if s.SensorType == SensorType.Fan]
@@ -162,12 +161,10 @@ class LhmSensor:
         """Читання температури GPU (додатково)"""
         try:
             for hardware in self.computer.Hardware:
-                hardware.Update()
-
                 if hardware.HardwareType == HardwareType.GpuNvidia or \
                    hardware.HardwareType == HardwareType.GpuAmd or \
                    hardware.HardwareType == HardwareType.GpuIntel:
-
+                    hardware.Update()
                     for sensor in hardware.Sensors:
                         if sensor.SensorType == SensorType.Temperature and sensor.Value:
                             temp = float(sensor.Value)

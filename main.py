@@ -30,6 +30,8 @@ class NbfcConfigParser:
         self.file = xml_file
         self.fans = []
         self.model_name = "No config loaded"
+        self.ec_poll_interval = 3000  # Default value
+        self.read_write_words = False # Default value
 
     def parse(self):
         if not self.file or not os.path.exists(self.file):
@@ -40,6 +42,16 @@ class NbfcConfigParser:
             model_node = root.find('NotebookModel')
             if model_node is not None:
                 self.model_name = model_node.text
+
+            # Parse global settings
+            poll_interval_node = root.find('EcPollInterval')
+            if poll_interval_node is not None and poll_interval_node.text:
+                self.ec_poll_interval = int(poll_interval_node.text)
+
+            read_write_words_node = root.find('ReadWriteWords')
+            if read_write_words_node is not None and read_write_words_node.text:
+                self.read_write_words = read_write_words_node.text.lower() == 'true'
+
             self.fans.clear()
             for fan_config in root.findall('.//FanConfiguration'):
                 display_name_node = fan_config.find('FanDisplayName')
@@ -49,12 +61,16 @@ class NbfcConfigParser:
                     name_node = fan_config.find('Name')
                     fan_name = name_node.text if name_node is not None else 'Unnamed Fan'
 
+                reset_value_node = fan_config.find('FanSpeedResetValue')
+                reset_value = int(reset_value_node.text) if reset_value_node is not None and reset_value_node.text else 255
+
                 fan = {
                     'name': fan_name,
                     'read_reg': int(fan_config.find('ReadRegister').text),
                     'write_reg': int(fan_config.find('WriteRegister').text),
                     'min_speed': int(fan_config.find('MinSpeedValue').text),
                     'max_speed': int(fan_config.find('MaxSpeedValue').text),
+                    'reset_val': reset_value,
                     'temp_thresholds': []
                 }
                 thresholds_node = fan_config.find('TemperatureThresholds')
@@ -66,7 +82,8 @@ class NbfcConfigParser:
                         fan['temp_thresholds'].append((up, down, speed))
                 self.fans.append(fan)
             return True
-        except ET.ParseError:
+        except (ET.ParseError, ValueError) as e:
+            logging.error(f"Failed to parse NBFC config: {e}")
             return False
 
 
@@ -195,21 +212,22 @@ class AppLogic:
 
         self.set_fan_speed_internal(fan_index, slider_var.get())
 
-    def set_fan_speed_internal(self, fan_index, speed):
+    def set_fan_speed_internal(self, fan_index, speed, force_write=False):
         if self.fan_control_disabled:
             return
 
-        slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
-        if not slider_var:
-            return
+        if not force_write:
+            slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
+            if not slider_var:
+                return
 
-        fan = self.nbfc_parser.fans[fan_index]
-        min_val = fan['min_speed']
-        disabled_val = min_val - 2
-        read_only_val = min_val - 1
+            fan = self.nbfc_parser.fans[fan_index]
+            min_val = fan['min_speed']
+            disabled_val = min_val - 2
+            read_only_val = min_val - 1
 
-        if slider_var.get() in (read_only_val, disabled_val):
-            return
+            if slider_var.get() in (read_only_val, disabled_val):
+                return
 
         threading.Thread(target=self._set_fan_speed_thread, args=(fan_index, speed)).start()
 
@@ -251,11 +269,18 @@ class AppLogic:
             fan = self.nbfc_parser.fans[fan_index]
             min_speed = fan['min_speed']
             max_speed = fan['max_speed']
+            read_only_val = min_speed - 1
 
-            # Track last written speed for accuracy.
-            last_speed = self.fan_controller.last_speed.get(fan_index, 0)
+            slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
 
-            percent_value = max(0, min(100, int((last_speed / max_speed) * 100))) if max_speed > 0 else 0
+            percent_value = 0
+            if slider_var and slider_var.get() == read_only_val:
+                # In Read-Only mode, calculate percentage from actual RPM
+                percent_value = max(0, min(100, int((rpm_value / max_speed) * 100))) if max_speed > 0 else 0
+            else:
+                # In Active modes, use last written speed for stability
+                last_speed = self.fan_controller.last_speed.get(fan_index, 0)
+                percent_value = max(0, min(100, int((last_speed / max_speed) * 100))) if max_speed > 0 else 0
 
             # Schedule the UI update on the main thread
             self.main_window.after(0, self.main_window.update_fan_readings, fan_index, rpm_value, percent_value)
@@ -313,9 +338,29 @@ class AppLogic:
                 print(f"Failed to update registry for autostart: {e}")
 
 
+def unblock_file(filepath):
+    """
+    Removes the Zone.Identifier alternate data stream from a file if it exists,
+    to prevent Windows from blocking downloaded DLLs.
+    """
+    if sys.platform != 'win32':
+        return
+    ads_path = filepath + ":Zone.Identifier"
+    try:
+        if os.path.exists(ads_path):
+            os.remove(ads_path)
+            logging.info(f"Unblocked {os.path.basename(filepath)}")
+    except OSError as e:
+        logging.warning(f"Failed to unblock {os.path.basename(filepath)}: {e}")
+
 def main():
     setup_logger()
     if sys.platform == 'win32':
+        # Unblock potentially blocked DLLs before they are loaded
+        unblock_file('inpoutx64.dll')
+        unblock_file('plugins/lhm_sensor/LibreHardwareMonitorLib.dll')
+        unblock_file('plugins/lhm_sensor/HidSharp.dll')
+
         try:
             is_admin = ctypes.windll.shell32.IsUserAnAdmin()
         except AttributeError:
