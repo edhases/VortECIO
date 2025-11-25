@@ -40,12 +40,26 @@ class MainWindow(ctk.CTk):
         self.menu_bar = ctk.CTkFrame(self, height=30, corner_radius=0)
         self.menu_bar.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
 
-        # File Menu Button (Placeholder for dropdown)
-        self.file_menu_button = ctk.CTkButton(self.menu_bar, text=translate("file_menu"), width=60, corner_radius=0, command=self.app_logic.load_config_file)
-        self.file_menu_button.pack(side="left", padx=(5,0))
-        # Settings Menu Button (Placeholder for dropdown)
-        self.settings_menu_button = ctk.CTkButton(self.menu_bar, text=translate("settings_menu"), width=80, corner_radius=0)
-        self.settings_menu_button.pack(side="left", padx=5)
+        # File Menu
+        self.file_menu_var = tk.StringVar(value=translate("file_menu"))
+        self.file_menu = ctk.CTkOptionMenu(self.menu_bar, variable=self.file_menu_var,
+                                           values=[translate("load_config_menu"), translate("hide_to_tray_menu")],
+                                           command=self.file_menu_callback)
+        self.file_menu.pack(side="left", padx=(5,0))
+
+        # Settings Menu
+        self.settings_menu_var = tk.StringVar(value=translate("settings_menu"))
+        self.settings_menu = ctk.CTkOptionMenu(self.menu_bar, variable=self.settings_menu_var,
+                                               values=[translate("theme_light"), translate("theme_dark"), "", translate("lang_en"), translate("lang_uk")],
+                                               command=self.settings_menu_callback)
+        self.settings_menu.pack(side="left", padx=5)
+
+        # Autostart Checkbox
+        self.autostart_var = tk.BooleanVar()
+        self.autostart_var.set(self.app_logic.config.get("autostart"))
+        self.autostart_checkbox = ctk.CTkCheckBox(self.menu_bar, text=translate("autostart_windows"), variable=self.autostart_var, command=self.app_logic.toggle_autostart)
+        self.autostart_checkbox.pack(side="left", padx=5)
+
         # Plugins Menu Button
         self.plugins_menu_button = ctk.CTkButton(self.menu_bar, text=translate("plugins_menu"), width=70, corner_radius=0, command=self.open_plugin_manager)
         self.plugins_menu_button.pack(side="left", padx=0)
@@ -87,6 +101,24 @@ class MainWindow(ctk.CTk):
         driver_status = "OK" if self.app_logic.driver.is_initialized else "ERROR"
         self.driver_label = ctk.CTkLabel(self.status_bar, text=f"{translate('driver_label')}: {driver_status}")
         self.driver_label.pack(side='right', padx=10)
+
+    def file_menu_callback(self, choice):
+        if choice == translate("load_config_menu"):
+            self.app_logic.load_config_file()
+        elif choice == translate("hide_to_tray_menu"):
+            self.app_logic.on_closing()
+        self.file_menu_var.set(translate("file_menu"))
+
+    def settings_menu_callback(self, choice):
+        if choice == translate("theme_light"):
+            self.app_logic.apply_theme("light")
+        elif choice == translate("theme_dark"):
+            self.app_logic.apply_theme("dark")
+        elif choice == translate("lang_en"):
+            self.app_logic.set_language("en")
+        elif choice == translate("lang_uk"):
+            self.app_logic.set_language("uk")
+        self.settings_menu_var.set(translate("settings_menu"))
 
     def open_plugin_manager(self):
         PluginManagerWindow(self, self.app_logic)

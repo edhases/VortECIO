@@ -16,6 +16,7 @@ from config import AppConfig
 from fan_controller import FanController
 from plugin_manager import PluginManager
 from system_tray import SystemTray
+import customtkinter as ctk
 import themes
 import localization
 
@@ -127,8 +128,10 @@ class AppLogic:
 
     def apply_theme(self, theme_name):
         self.config.set("theme", theme_name)
-        if hasattr(self, 'main_window'):
-            themes.apply_theme(self.main_window, theme_name)
+        # customtkinter handles the theme switching internally
+        valid_themes = ["light", "dark"] # Add "system" if you want to support it
+        if theme_name in valid_themes:
+            ctk.set_appearance_mode(theme_name)
 
     def set_language(self, lang_code):
         self.config.set("language", lang_code)
