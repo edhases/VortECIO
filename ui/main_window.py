@@ -183,10 +183,13 @@ class MainWindow(ctk.CTk):
         val = int(float(value))
 
         first_fan = self.app_logic.nbfc_parser.fans[0]
+        min_val = first_fan['min_speed']
         max_val = first_fan['max_speed']
+        disabled_val = min_val - 2
+        read_only_val = min_val - 1
         auto_val = max_val + 1
 
-        is_auto_mode = (val == auto_val)
+        is_special_mode = val in [disabled_val, read_only_val, auto_val]
 
         for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
             slider_var = self.fan_vars.get(f'fan_{i}_write')
@@ -203,6 +206,10 @@ class MainWindow(ctk.CTk):
             current_val_for_label = slider_var.get()
             if current_val_for_label == auto_val:
                 label_var.set(translate("slider_auto"))
+            elif current_val_for_label == read_only_val:
+                label_var.set(translate("slider_read"))
+            elif current_val_for_label == disabled_val:
+                label_var.set(translate("slider_off"))
             else:
                 label_var.set(f"{current_val_for_label}%")
 
