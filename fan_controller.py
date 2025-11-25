@@ -1,17 +1,14 @@
 import threading
 import time
 from tkinter import messagebox
-from logger import get_logger
 
 class FanController:
     def __init__(self, app_logic):
         self.app_logic = app_logic
-        self.logger = get_logger('FanController')
         self.stop_event = threading.Event()
         self.control_thread = None
         self.last_speed = {}
         self.sensor_errors = 0
-        self.logger.info("FanController initialized")
 
     def start(self):
         if self.control_thread and self.control_thread.is_alive():
@@ -32,72 +29,40 @@ class FanController:
         self.app_logic.main_window.after(0, lambda: messagebox.showerror("Sensor Error", "Thermal sensor failure. Fan control disabled for safety."))
 
     def control_loop(self):
-        """Головний цикл контролю вентиляторів"""
-        self.logger.info("Fan control loop started")
-
         while not self.stop_event.is_set():
             if self.app_logic.fan_control_disabled:
-                self.logger.warning("Fan control disabled, stopping loop")
-                self.stop_event.wait(5.0)
+                self.stop_event.wait(3.0)
                 continue
 
-            try:
-                # Отримати температуру через LHM
-                current_temp = self.app_logic.get_active_sensor().get_temperature()
-                self.logger.debug(f"Current temperature: {current_temp}°C")
+            sensor = self.app_logic.get_active_sensor()
+            if not sensor:
+                self.stop_event.wait(3.0)
+                continue
 
-                # Оновити графік (thread-safe)
-                self.app_logic.main_window.after(
-                    0,
-                    self.app_logic.main_window.temp_graph.add_temperature,
-                    current_temp
-                )
+            current_temp = sensor.get_temperature()
 
-                # Контроль швидкості вентиляторів
-                for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
-                    slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
-                    if not slider_var:
-                        continue
-
-                    max_val = fan['max_speed']
-                    auto_val = max_val + 1
-
-                    if slider_var.get() == auto_val:
-                        target_speed = self._get_speed_for_temp(i, fan, current_temp)
-
-                        if target_speed != self.last_speed.get(i):
-                            self.app_logic.set_fan_speed_internal(i, target_speed)
-                            self.last_speed[i] = target_speed
-                            self.logger.info(f"Fan {i} ({fan['name']}): {target_speed}% at {current_temp}°C")
-
-                    # Читання RPM (опційно, через LHM якщо доступно)
-                    if hasattr(self.app_logic.lhm_sensor, 'get_fan_rpm'):
-                        rpm = self.app_logic.lhm_sensor.get_fan_rpm(i)
-                        if rpm > 0:
-                            self.logger.debug(f"Fan {i} RPM: {rpm}")
-
-                # Reset error counter
-                self.sensor_errors = 0
-
-            except RuntimeError as e:
-                # Критична помилка - сенсор відсутній
-                self.logger.critical(f"Sensor error: {e}")
-                self.trigger_panic_mode()
-                break
-
-            except Exception as e:
+            if current_temp is None:
                 self.sensor_errors += 1
-                self.logger.error(f"Error in control loop: {e}", exc_info=True)
-
-                if self.sensor_errors >= 5:
-                    self.logger.critical("Too many sensor errors, triggering panic mode")
+                if self.sensor_errors * 3 >= 10:
                     self.trigger_panic_mode()
-                    break
+                    continue
+            else:
+                self.sensor_errors = 0
+                self.app_logic.main_window.after(0, self.app_logic.main_window.temp_graph.add_temperature, current_temp)
 
-            # Пауза між ітераціями
-            self.stop_event.wait(2.0)
+            for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
+                slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
+                if not slider_var:
+                    continue
 
-        self.logger.info("Fan control loop stopped")
+                max_val = fan['max_speed']
+                auto_val = max_val + 1
+
+                if slider_var.get() == auto_val:
+                    new_speed = self._get_speed_for_temp(i, fan, current_temp)
+                    self.app_logic.set_fan_speed_internal(i, new_speed)
+
+            self.stop_event.wait(3.0)
 
     def _get_speed_for_temp(self, fan_index, fan_config, temp):
         last_speed = self.last_speed.get(fan_index, 0)

@@ -3,7 +3,6 @@ from tkinter import ttk, filedialog, messagebox
 from localization import translate
 from ui.plugin_manager_window import PluginManagerWindow
 from ui.temperature_graph import TemperatureGraph
-from logger import get_logger
 
 class MainWindow(tk.Tk):
     def __init__(self, app_logic):

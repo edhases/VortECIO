@@ -8,8 +8,6 @@ class PluginManager:
         self.plugin_folder = plugin_folder
         self.plugins = []
         self.active_plugins = self.app_logic.config.get("active_plugins", [])
-        self.logger = get_logger('PluginManager')
-        self.logger.info(f"Active plugins: {self.active_plugins}")
 
     def discover_plugins(self):
         """Пошук та завантаження плагінів"""
@@ -23,13 +21,9 @@ class PluginManager:
             item_path = os.path.join(self.plugin_folder, item)
             if os.path.isdir(item_path):
                 if item in self.active_plugins:
-                    self.logger.info(f"Loading plugin: {item}")
                     self.load_plugin_package(item_path)
-                else:
-                    self.logger.debug(f"Skipping disabled plugin: {item}")
 
     def load_plugin_package(self, path):
-        """Завантаження окремого плагіну"""
         init_file = os.path.join(path, "__init__.py")
         if not os.path.exists(init_file):
             self.logger.warning(f"Plugin __init__.py not found: {path}")

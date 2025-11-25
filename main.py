@@ -8,10 +8,9 @@ import sys
 import threading
 from tkinter import messagebox
 
-# Ініціалізувати логування ПЕРШИМ
-logger = setup_logger()
-
 from hardware import EcDriver
+import wmi
+import pythoncom
 from ui.main_window import MainWindow
 from config import AppConfig
 from fan_controller import FanController
@@ -65,6 +64,22 @@ class NbfcConfigParser:
             return False
 
 
+class WmiTempSensor:
+    def get_temperature(self):
+        try:
+            pythoncom.CoInitialize()
+            w = wmi.WMI(namespace="root\\wmi")
+            temps = w.MSAcpi_ThermalZoneTemperature()
+            # Search for the maximum temperature > 20°C
+            max_t = 0
+            for t in temps:
+                c = (t.CurrentTemperature - 2732) / 10.0
+                if c > max_t: max_t = c
+            return max_t if max_t > 0 else 45.0
+        except Exception:
+            return 45.0 # Return a fallback value in case of an error
+        finally:
+            pythoncom.CoUninitialize()
 
 class AppLogic:
     def __init__(self):
@@ -73,9 +88,8 @@ class AppLogic:
         self.nbfc_parser = NbfcConfigParser(None)
         self.stop_event = threading.Event()
         self.update_thread = None
-        self.logger = get_logger('AppLogic')
-        self.active_sensor = None  # Буде встановлено через плагін
-        self.lhm_sensor = None  # Посилання на LHM sensor
+        self.default_sensor = WmiTempSensor()
+        self.plugin_sensor = None
         self.fan_controller = FanController(self)
         self.system_tray = SystemTray(self)
         self.fan_control_disabled = False
@@ -97,26 +111,14 @@ class AppLogic:
         self.fan_controller.start()
 
     def get_active_sensor(self):
-        """Отримати активний сенсор з перевіркою"""
-        if self.active_sensor is None:
-            self.logger.critical("No temperature sensor available!")
-            raise RuntimeError(
-                "Temperature sensor not initialized.\n"
-                "Please install LibreHardwareMonitor:\n"
-                "pip install pythonnet\n"
-                "And enable lhm_sensor plugin."
-            )
-        return self.active_sensor
+        # Якщо плагін зареєстрував сенсор — використовуємо його
+        if self.plugin_sensor:
+            return self.plugin_sensor
+        return self.default_sensor
 
-    def register_sensor(self, sensor):
-        """Реєстрація сенсора з плагіну"""
-        self.logger.info(f"Registering sensor: {sensor.__class__.__name__}")
-        if hasattr(sensor, 'get_temperature'):
-            self.active_sensor = sensor
-            self.lhm_sensor = sensor
-            self.logger.info("LHM sensor activated successfully")
-        else:
-            self.logger.error("Invalid sensor - missing get_temperature method")
+    def register_sensor(self, sensor_instance):
+        print(f"New sensor registered: {sensor_instance}")
+        self.plugin_sensor = sensor_instance
 
     def apply_theme(self, theme_name):
         self.config.set("theme", theme_name)
@@ -216,7 +218,7 @@ class AppLogic:
                     if slider_var.get() != disabled_val:
                         read_reg = fan['read_reg']
                         value = self.driver.read_register(read_reg)
-                        self.logger.debug(f"Fan {i} (read_reg: {read_reg}): Raw value = {value}") # RPM logging
+                        print(f"Fan {i} (read_reg: {read_reg}): Raw value = {value}") # RPM logging
                         if value is not None:
                             self.main_window.update_fan_readings(i, value)
             self.stop_event.wait(2.0)
