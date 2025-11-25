@@ -79,42 +79,57 @@ class LhmSensor:
 
     def get_temperature(self):
         """
-        Читання температури CPU (основний метод для NBFC)
-        Повертає: float - температура в °C
+        Reads the highest temperature from available CPU and GPU sensors for fan control.
+        Returns: float - The highest temperature in °C.
         """
-        try:
-            for hardware in self.computer.Hardware:
-                hardware.Update()
+        cpu_temp = self.get_cpu_temperature()
+        gpu_temp = self.get_gpu_temperature()
 
-                if hardware.HardwareType == HardwareType.Cpu:
-                    # Пріоритет: CPU Package або Core Average
-                    for sensor in hardware.Sensors:
-                        if sensor.SensorType == SensorType.Temperature:
-                            if sensor.Value is not None:
-                                # Шукаємо Package або Total
-                                if "Package" in sensor.Name or "CPU Package" in sensor.Name:
-                                    temp = float(sensor.Value)
-                                    logger.debug(f"CPU Temp (Package): {temp}°C")
-                                    return temp
-                                elif "Average" in sensor.Name or "Core Average" in sensor.Name:
-                                    temp = float(sensor.Value)
-                                    logger.debug(f"CPU Temp (Average): {temp}°C")
-                                    return temp
-
-                    # Fallback: перша доступна температура CPU
-                    for sensor in hardware.Sensors:
-                        if sensor.SensorType == SensorType.Temperature and sensor.Value:
-                            temp = float(sensor.Value)
-                            logger.warning(f"Using fallback CPU temp: {temp}°C from {sensor.Name}")
-                            return temp
-
-            # Якщо нічого не знайдено
-            logger.error("No CPU temperature sensor found!")
+        if cpu_temp is None and gpu_temp is None:
+            logger.error("No CPU or GPU temperature sensors found for fan control!")
             return 45.0  # Safe default
 
+        highest_temp = max(filter(None, [cpu_temp, gpu_temp]))
+        logger.debug(f"Highest temp for fan control: {highest_temp}°C")
+        return highest_temp
+
+    def get_cpu_temperature(self):
+        """Gets the most reliable CPU temperature."""
+        try:
+            for hardware in self.computer.Hardware:
+                if hardware.HardwareType == HardwareType.Cpu:
+                    hardware.Update()
+
+                    package_sensor = next((s for s in hardware.Sensors if "Package" in s.Name and s.SensorType == SensorType.Temperature and s.Value is not None), None)
+                    if package_sensor:
+                        return float(package_sensor.Value)
+
+                    avg_sensor = next((s for s in hardware.Sensors if "Average" in s.Name and s.SensorType == SensorType.Temperature and s.Value is not None), None)
+                    if avg_sensor:
+                        return float(avg_sensor.Value)
+
+                    first_sensor = next((s for s in hardware.Sensors if s.SensorType == SensorType.Temperature and s.Value is not None), None)
+                    if first_sensor:
+                        logger.warning(f"Using fallback CPU temp from {first_sensor.Name}")
+                        return float(first_sensor.Value)
+            return None
         except Exception as e:
-            logger.error(f"Error reading temperature: {e}", exc_info=True)
-            return 45.0
+            logger.error(f"Error reading CPU temperature: {e}", exc_info=True)
+            return None
+
+    def get_gpu_temperature(self):
+        """Gets the GPU temperature."""
+        try:
+            for hardware in self.computer.Hardware:
+                if hardware.HardwareType in [HardwareType.GpuNvidia, HardwareType.GpuAmd, HardwareType.GpuIntel]:
+                    hardware.Update()
+                    temp_sensor = next((s for s in hardware.Sensors if s.SensorType == SensorType.Temperature and s.Value is not None), None)
+                    if temp_sensor:
+                        return float(temp_sensor.Value)
+            return None
+        except Exception as e:
+            logger.error(f"Error reading GPU temperature: {e}", exc_info=True)
+            return None
 
     def get_fan_rpm(self, fan_index=0):
         """
@@ -149,27 +164,6 @@ class LhmSensor:
         except Exception as e:
             logger.error(f"Error reading fan RPM: {e}", exc_info=True)
             return 0
-
-    def get_gpu_temperature(self):
-        """Читання температури GPU (додатково)"""
-        try:
-            for hardware in self.computer.Hardware:
-                hardware.Update()
-
-                if hardware.HardwareType == HardwareType.GpuNvidia or \
-                   hardware.HardwareType == HardwareType.GpuAmd or \
-                   hardware.HardwareType == HardwareType.GpuIntel:
-
-                    for sensor in hardware.Sensors:
-                        if sensor.SensorType == SensorType.Temperature and sensor.Value:
-                            temp = float(sensor.Value)
-                            logger.debug(f"GPU Temp: {temp}°C")
-                            return temp
-
-            return None
-        except Exception as e:
-            logger.error(f"Error reading GPU temperature: {e}")
-            return None
 
     def shutdown(self):
         """Закриття з'єднання з LHM"""

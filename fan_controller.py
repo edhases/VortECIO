@@ -48,7 +48,8 @@ class FanController:
                     continue
             else:
                 self.sensor_errors = 0
-                self.app_logic.main_window.after(0, self.app_logic.main_window.temp_graph.add_temperature, current_temp)
+                # Update temperatures in the main UI
+                self.app_logic.update_temperatures()
 
             for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
                 slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
@@ -69,17 +70,24 @@ class FanController:
         thresholds = sorted(fan_config['temp_thresholds'], key=lambda x: x[0])
         new_speed = last_speed
 
-        if temp > (thresholds[-1][0] if thresholds else 100):
+        if not thresholds:
+            return last_speed  # No thresholds defined, maintain current speed
+
+        # Determine if temperature is above the highest 'Up' threshold
+        if temp > thresholds[-1][0]:
             new_speed = thresholds[-1][2]
         else:
+            # Find the correct speed for the current temperature going up
             for up, down, speed in thresholds:
                 if temp >= up and last_speed < speed:
                     new_speed = speed
                     break
 
-        if temp < (thresholds[0][1] if thresholds else 0):
+        # Determine if temperature is below the lowest 'Down' threshold
+        if temp < thresholds[0][1]:
             new_speed = thresholds[0][2]
         else:
+            # Find the correct speed for the current temperature going down
             for up, down, speed in reversed(thresholds):
                 if temp <= down and last_speed > speed:
                     new_speed = speed
