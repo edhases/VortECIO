@@ -168,48 +168,53 @@ class NbfcConfigParser:
 if sys.platform == 'win32':
     class WmiTempSensor:
         def __init__(self) -> None:
-            self.w: Optional[wmi.WMI] = None
+            """Initializes the WMI sensor in a thread-safe manner."""
+            # COM objects are initialized on-demand in the calling thread
+            # to prevent cross-thread marshalling errors.
+            pass
+
+        def get_temperatures(self) -> Tuple[Optional[float], Optional[float]]:
+            """
+            Fetches CPU temperature from WMI.
+            This method is thread-safe.
+            """
             try:
                 pythoncom.CoInitialize()
-                self.w = wmi.WMI(namespace="root\\wmi")
-            except Exception as e:
-                logging.error(f"Failed to initialize WMI: {e}")
+                w = wmi.WMI(namespace="root\\wmi")
+                temps = w.MSAcpi_ThermalZoneTemperature()
 
-        def get_temperature(self) -> Optional[float]:
-            if not self.w:
-                return None
-            try:
-                temps = self.w.MSAcpi_ThermalZoneTemperature()
                 if not temps:
-                    logging.warning("WMI thermal zone sensor not found.")
-                    return None
+                    logging.warning("WMI: No MSAcpi_ThermalZoneTemperature sensors found.")
+                    return None, None
 
                 max_t = 0.0
                 for t in temps:
+                    # Temp is in tenths of Kelvin, convert to Celsius
                     c = (t.CurrentTemperature - 2732) / 10.0
                     if c > max_t:
                         max_t = c
-                return max_t if max_t > 0 else None
+
+                temp_result = max_t if max_t > 0 else None
+                return temp_result, None
+
             except wmi.x_wmi as e:
                 logging.error(f"WMI query failed: {e}")
-                return None
+                return None, None
             except pythoncom.com_error as e:
-                logging.error(f"COM error during WMI query: {e}")
-                return None
-
-        def get_temperatures(self) -> Tuple[Optional[float], Optional[float]]:
-            temp = self.get_temperature()
-            return temp, None
+                logging.error(f"COM error during WMI query, likely a threading issue: {e}")
+                return None, None
+            finally:
+                pythoncom.CoUninitialize()
 
         def shutdown(self) -> None:
-            pythoncom.CoUninitialize()
+            # No-op, CoUninitialize is called in get_temperatures
+            pass
 else:
     class WmiTempSensor:
         def __init__(self) -> None:
             logging.info("Running on non-Windows OS, WMI sensor is disabled.")
-        def get_temperature(self) -> float:
-            return 45.0
         def get_temperatures(self) -> Tuple[Optional[float], Optional[float]]:
+            # Return a dummy value for testing on non-windows
             return 45.0, None
         def shutdown(self) -> None:
             pass
