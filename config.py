@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from logger import get_logger
 
 class AppConfig:
@@ -11,9 +12,14 @@ class AppConfig:
             "theme": "light",
             "language": "en",
             "autostart": False,
-            "active_plugins": ["lhm_sensor"]  # LHM за замовчуванням!
+            "active_plugins": ["lhm_sensor"],
+            "detailed_logging": False,
+            "log_level": "INFO"
         }
         self.config = self.defaults.copy()
+        self._pending_changes = {}
+        self._save_timer = None
+        self._save_lock = threading.Lock()
         self.load()
 
     def load(self):
@@ -38,13 +44,26 @@ class AppConfig:
             self.logger.error(f"Error saving config: {e}")
 
     def get(self, key, default=None):
-        if key in self.config:
-            return self.config[key]
-        if key in self.defaults:
-            return self.defaults[key]
-        return default
+        with self._save_lock:
+            if key in self.config:
+                return self.config[key]
+            if key in self.defaults:
+                return self.defaults[key]
+            return default
 
     def set(self, key, value):
-        self.config[key] = value
-        self.save()
-        self.logger.debug(f"Config updated: {key} = {value}")
+        with self._save_lock:
+            self.config[key] = value
+            self._pending_changes[key] = value
+            if self._save_timer:
+                self._save_timer.cancel()
+            self._save_timer = threading.Timer(1.0, self._flush_changes)
+            self._save_timer.start()
+            self.logger.debug(f"Config queued: {key} = {value}")
+
+    def _flush_changes(self):
+        with self._save_lock:
+            if self._pending_changes:
+                self.save()
+                self.logger.info(f"Saved {len(self._pending_changes)} config changes")
+                self._pending_changes.clear()

@@ -58,6 +58,7 @@ The application allows users to take full control of fan speeds, achieving the p
 ### ✨ Key Features & Advantages
 
 * **NBFC Compatibility:** Full support for NoteBook FanControl `.xml` configuration files. You can use existing profiles created for hundreds of laptop models.
+  - **Extended XML Support:** VortECIO now supports additional NBFC tags like `<CriticalTemperature>` for model-specific thermal shutdown and `<EcIoPorts>` for laptops with non-standard Embedded Controller addresses.
 * **Precise Monitoring (LHM):** Integration with **LibreHardwareMonitor** ensures instant and accurate reading of CPU (including per-core) and GPU temperatures, offering significantly higher reliability than standard WMI methods.
 * **Flexible Control Modes:**
     * **Automatic:** Smooth fan speed adjustment based on the temperature curve defined in the configuration.
@@ -85,3 +86,27 @@ This project was made possible thanks to amazing tools and the Open Source commu
 * **CustomTkinter:** For enabling the creation of a modern and aesthetic user interface.
 * **Highresolution Enterprises:** For the `InpOut32/x64` driver, enabling direct hardware port access.
 * **Icon8:** For graphical resources (icons).
+
+---
+
+### 🔍 Troubleshooting
+
+#### Enable Detailed Logging
+If you encounter issues, enable detailed logging for diagnostics:
+
+1.  Open **Settings → Advanced** tab.
+2.  Check **"Enable detailed logging"**.
+3.  **Restart** VortECIO.
+4.  Reproduce the issue.
+5.  Find logs in `logs/fancontrol_detailed.log`.
+
+**Log Format:** JSON (one object per line)
+**Maximum Size:** 10 MB (automatically rotated)
+**Location:** `logs/` folder in the application directory.
+
+To share logs for support:
+- Click **"Open Log Folder"** in Settings.
+- Compress the `fancontrol_detailed.log` file.
+- Attach it to your bug report.
+
+**Privacy Note:** Logs contain your laptop model, temperatures, and fan speeds. No personal data is ever logged.
