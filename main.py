@@ -6,7 +6,6 @@ from logger import setup_logger, get_logger
 import time
 import sys
 import threading
-from tkinter import messagebox
 
 from hardware import EcDriver
 import wmi
@@ -194,40 +193,18 @@ class AppLogic:
         if filepath:
             self._load_config(filepath)
 
-    def set_fan_speed(self, fan_index):
-        slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
-        if not slider_var:
-            return
-
-        fan = self.nbfc_parser.fans[fan_index]
-        min_val = fan['min_speed']
-        max_val = fan['max_speed']
-        disabled_val = min_val - 2
-        read_only_val = min_val - 1
-        auto_val = max_val + 1
-
-        # If the slider is set to "Auto", "Read-only", or "Disabled", we don't do anything here.
-        if slider_var.get() in (auto_val, read_only_val, disabled_val):
-            return
-
-        self.set_fan_speed_internal(fan_index, slider_var.get())
-
-    def set_fan_speed_internal(self, fan_index, speed, force_write=False):
+    def set_fan_speed_internal(self, fan_index: int, speed: int, force_write: bool = False) -> None:
         if self.fan_control_disabled:
             return
 
         if not force_write:
-            slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
-            if not slider_var:
-                return
-
-            fan = self.nbfc_parser.fans[fan_index]
-            min_val = fan['min_speed']
-            disabled_val = min_val - 2
-            read_only_val = min_val - 1
-
-            if slider_var.get() in (read_only_val, disabled_val):
-                return
+            # Check mode from new UI structure
+            mode_var = self.main_window.fan_mode_vars.get(fan_index)
+            if mode_var:
+                mode = mode_var.get()
+                # Don't allow writes in Read-only and Disabled modes
+                if mode in ("Read-only", "Disabled"):
+                    return
 
         threading.Thread(target=self._set_fan_speed_thread, args=(fan_index, speed)).start()
 
