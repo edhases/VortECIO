@@ -14,7 +14,10 @@ class AppConfig:
             "autostart": False,
             "active_plugins": ["lhm_sensor"],
             "detailed_logging": False,
-            "log_level": "INFO"
+            "log_level": "INFO",
+            "critical_temp_action": "ask",  # "ask", "disable", "continue", "ignore"
+            "show_critical_warning": True,
+            "prefer_lhm": True
         }
         self.config = self.defaults.copy()
         self._pending_changes = {}
@@ -62,7 +65,13 @@ class AppConfig:
             self.logger.debug(f"Config queued: {key} = {value}")
 
     def _flush_changes(self):
+        """Flush pending changes to disk"""
         with self._save_lock:
+            # Cancel timer if exists
+            if self._save_timer:
+                self._save_timer.cancel()
+                self._save_timer = None
+
             if self._pending_changes:
                 self.save()
                 self.logger.info(f"Saved {len(self._pending_changes)} config changes")

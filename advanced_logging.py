@@ -14,7 +14,7 @@ class StructuredFormatter(logging.Formatter):
     """
     def format(self, record: logging.LogRecord) -> str:
         log_data = {
-            'timestamp': self.formatTime(record, datefmt='%Y-%m-%d %H:%M:%S.%f')[:-3],
+            'timestamp': datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
             'level': record.levelname,
             'module': record.name,
             'message': record.getMessage()
