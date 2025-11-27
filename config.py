@@ -62,7 +62,13 @@ class AppConfig:
             self.logger.debug(f"Config queued: {key} = {value}")
 
     def _flush_changes(self):
+        """Flush pending changes to disk"""
         with self._save_lock:
+            # Cancel timer if exists
+            if self._save_timer:
+                self._save_timer.cancel()
+                self._save_timer = None
+
             if self._pending_changes:
                 self.save()
                 self.logger.info(f"Saved {len(self._pending_changes)} config changes")
