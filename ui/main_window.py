@@ -4,42 +4,62 @@ from logger import get_logger
 from localization import translate
 from ui.plugin_manager_window import PluginManagerWindow
 from CTkToolTip import CTkToolTip
+from ui.components import CTkMessageBox
 
-class CTkMessageBox(ctk.CTkToplevel):
-    """Custom messagebox using customtkinter"""
-    def __init__(self, title: str, message: str, icon: str = "info"):
-        super().__init__()
-        self.title(title)
-        self.geometry("400x200")
-
-        # Icon
-        icon_label = ctk.CTkLabel(self, text="⚠️" if icon == "warning" else "ℹ️",
-                                   font=ctk.CTkFont(size=48))
-        icon_label.pack(pady=20)
-
-        # Message
-        msg_label = ctk.CTkLabel(self, text=message, wraplength=350)
-        msg_label.pack(pady=10)
-
-        # OK button
-        ctk.CTkButton(self, text="OK", command=self.destroy).pack(pady=20)
-
-class StatusNotification(ctk.CTkFrame):
-    """Toast-style notification"""
+class StatusNotification(ctk.CTkToplevel):
+    """Toast-style notification window"""
     def __init__(self, parent, message: str, duration: int = 3000):
-        super().__init__(parent, corner_radius=10)
+        super().__init__(parent)
 
-        label = ctk.CTkLabel(self, text=message)
+        # Make it a borderless, tool window
+        self.overrideredirect(True)
+        self.wm_attributes("-toolwindow", True)
+        self.attributes('-topmost', True) # Keep on top
+
+        # Use a frame inside for styling
+        frame = ctk.CTkFrame(self, corner_radius=10)
+        frame.pack(expand=True, fill="both")
+
+        label = ctk.CTkLabel(frame, text=message)
         label.pack(padx=20, pady=10)
 
-        # Position at bottom-right
-        self.place(relx=1.0, rely=1.0, x=-20, y=-20, anchor="se")
+        # Force window to calculate its size
+        self.update_idletasks()
+
+        # Position at bottom-right of parent
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        parent_w = parent.winfo_width()
+        parent_h = parent.winfo_height()
+        self_w = self.winfo_width()
+        self_h = self.winfo_height()
+
+        pos_x = parent_x + parent_w - self_w - 20
+        pos_y = parent_y + parent_h - self_h - 20
+        self.geometry(f"{self_w}x{self_h}+{pos_x}+{pos_y}")
+
+        # Set initial alpha and start fade-in
+        self.attributes('-alpha', 0.0)
+        self.after(10, self.animate_show)
 
         # Auto-hide after duration
         self.after(duration, self.animate_hide)
 
+    def animate_show(self):
+        """Fade in animation"""
+        alpha = 0.0
+        def fade():
+            nonlocal alpha
+            alpha += 0.1
+            if alpha >= 1.0:
+                self.attributes('-alpha', 1.0)
+            else:
+                self.attributes('-alpha', alpha)
+                self.after(20, fade)
+        fade()
+
     def animate_hide(self):
-        # Fade out animation
+        """Fade out animation"""
         alpha = 1.0
         def fade():
             nonlocal alpha
@@ -48,8 +68,9 @@ class StatusNotification(ctk.CTkFrame):
                 self.destroy()
             else:
                 self.attributes('-alpha', alpha)
-                self.after(50, fade)
+                self.after(20, fade)
         fade()
+
 
 class MainWindow(ctk.CTk):
     def __init__(self, app_logic):
@@ -64,6 +85,8 @@ class MainWindow(ctk.CTk):
         self.fan_rpm_labels = {}
         self.fan_frames = {}
         self.mode_indicators = {}
+
+        self.autostart_var = ctk.BooleanVar(value=self.app_logic.config.get("autostart", False))
 
         # Set theme and appearance
         ctk.set_appearance_mode(self.app_logic.config.get("theme", "dark"))
@@ -115,7 +138,7 @@ class MainWindow(ctk.CTk):
         # Title
         title = ctk.CTkLabel(
             top_frame,
-            text="VortECIO Fan Control",
+            text=translate('app_title'),
             font=ctk.CTkFont(size=20, weight="bold")
         )
         title.pack(side="left")

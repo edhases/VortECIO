@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import webbrowser
 from CTkToolTip import CTkToolTip
-from ui.main_window import CTkMessageBox
+from ui.components import CTkMessageBox
 import os
 
 class SettingsWindow(ctk.CTkToplevel):
@@ -60,12 +60,11 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(startup_frame, text="Startup",
                      font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", pady=5)
 
-        autostart_var = ctk.BooleanVar(value=self.app_logic.config.get("autostart"))
         ctk.CTkCheckBox(
             startup_frame,
             text="Start with Windows",
-            variable=autostart_var,
-            command=lambda: self.app_logic.toggle_autostart()
+            variable=self.app_logic.main_window.autostart_var,
+            command=self.app_logic.toggle_autostart
         ).pack(anchor="w", pady=5)
 
         minimize_var = ctk.BooleanVar(value=self.app_logic.config.get("start_minimized", False))
