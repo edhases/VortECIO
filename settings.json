@@ -3,5 +3,7 @@
     "theme": "light",
     "language": "en",
     "autostart": false,
-    "active_plugins": []
+    "active_plugins": [],
+    "detailed_logging": false,
+    "log_level": "INFO"
 }

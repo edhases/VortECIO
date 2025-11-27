@@ -1,7 +1,6 @@
 import threading
 import time
 import bisect
-from tkinter import messagebox
 from typing import Dict, Any, Optional
 from logger import get_logger
 from utils import normalize_fan_speed, denormalize_fan_speed
@@ -38,9 +37,20 @@ class FanController:
     def trigger_panic_mode(self) -> None:
         if self.app_logic.fan_control_disabled:
             return
+
         self.app_logic.fan_control_disabled = True
         self.sensor_errors = 0
-        self.app_logic.main_window.after(0, lambda: messagebox.showerror("Sensor Error", "Thermal sensor failure. Fan control disabled for safety."))
+
+        # Use modern CTkMessageBox
+        def show_error():
+            from ui.main_window import CTkMessageBox
+            CTkMessageBox(
+                title="Sensor Error",
+                message="Thermal sensor failure. Fan control disabled for safety.",
+                icon="warning"
+            )
+
+        self.app_logic.main_window.after(0, show_error)
 
     def _update_fan_mode_cache(self) -> None:
         with self._cache_lock:
@@ -49,9 +59,28 @@ class FanController:
                     return
                 for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
                     auto_val = fan['max_speed'] + 1
-                    slider_var = self.app_logic.main_window.fan_vars.get(f'fan_{i}_write')
-                    if slider_var:
-                        self._fan_mode_cache[i] = slider_var.get()
+                    # Read from new UI structure
+                    mode_str_var = self.app_logic.main_window.fan_mode_vars.get(i)
+                    if mode_str_var:
+                        mode_value = mode_str_var.get()
+
+                        # Mode mapping: string -> internal integer
+                        mode_mapping = {
+                            'Auto': auto_val,
+                            'Read-only': fan['min_speed'] - 1,
+                            'Disabled': fan['min_speed'] - 2,
+                            'Manual': None  # Special: read from slider
+                        }
+
+                        if mode_value == 'Manual':
+                            # For manual mode, read slider value
+                            slider_var = self.app_logic.main_window.fan_slider_vars.get(i)
+                            if slider_var:
+                                self._fan_mode_cache[i] = slider_var.get()
+                            else:
+                                self._fan_mode_cache[i] = 50  # Default 50%
+                        else:
+                            self._fan_mode_cache[i] = mode_mapping.get(mode_value, auto_val)
                     else:
                         self._fan_mode_cache[i] = auto_val
             except Exception as e:
@@ -133,13 +162,14 @@ class FanController:
                         self.fan_states[i] = 'active'
                         speed_to_write = 0
                         if fan_mode == auto_val:
-                            hysteresis_start = time.perf_counter()
+                            # Auto mode: calculate from temperature
                             speed_percent = self._get_speed_for_temp(i, fan, current_temp) if current_temp is not None else self.last_speed.get(i, 0)
-                            hysteresis_time = time.perf_counter() - hysteresis_start
-                            if hysteresis_time > 0.001:
-                                logger.debug(f"Hysteresis calculation took {hysteresis_time*1000:.2f}ms for fan {i}")
                             speed_to_write = denormalize_fan_speed(speed_percent, fan)
+                        elif fan_mode == read_only_val or fan_mode == disabled_val:
+                            # These modes are handled by the is_active_control check, but we continue defensively.
+                            continue
                         else:
+                            # Manual mode: Assume it's a percentage from the new UI
                             speed_to_write = denormalize_fan_speed(fan_mode, fan)
                         self.app_logic.set_fan_speed_internal(i, speed_to_write)
                     else:
@@ -199,36 +229,19 @@ class FanController:
         return normalize_fan_speed(rpm, fan_config)
 
     def _get_speed_for_temp(self, fan_index: int, fan_config: Dict[str, Any], temp: Optional[float]) -> int:
-        """
-        Determine fan speed based on temperature with hysteresis.
-        Uses binary search for O(log n) performance.
-        Args:
-            fan_index: Index of the fan
-            fan_config: Fan configuration dict with 'temp_thresholds' key
-            temp: Current temperature in Celsius
-
-        Returns:
-            Target fan speed (percentage, 0-100)
-        """
         last_speed = self.last_speed.get(fan_index, 0)
         thresholds = fan_config.get('temp_thresholds', [])
 
         if not thresholds or temp is None:
             return last_speed
 
-        # Thresholds are already sorted in main.py
-        # Format: [(up_temp, down_temp, speed), ...]
-
-        # Binary search for the appropriate threshold
+        # Binary search for target zone
         up_temps = [t[0] for t in thresholds]
         idx = bisect.bisect_right(up_temps, temp)
 
-        # Determine target speed zone
         if idx == 0:
-            # Below all thresholds
             target_speed = 0
         else:
-            # At or above threshold idx-1
             target_speed = thresholds[idx - 1][2]
 
         # Apply hysteresis
@@ -239,36 +252,32 @@ class FanController:
             new_speed = target_speed
         elif target_speed < last_speed:
             # Temperature falling: check down threshold
-            # Find current speed zone
             current_zone_idx = None
+
+            # Try to find zone matching last_speed
             for i, (up, down, speed) in enumerate(thresholds):
                 if speed == last_speed:
                     current_zone_idx = i
                     break
 
             if current_zone_idx is not None:
+                # Normal case: last_speed matches a threshold
                 down_threshold = thresholds[current_zone_idx][1]
                 if temp <= down_threshold:
-                    # Below down threshold: allow speed decrease
                     new_speed = target_speed
-                # else: stay in hysteresis zone (new_speed = last_speed)
-
-        detailed_logger = get_detailed_logger()
-        if detailed_logger:
-            reason = 'unchanged'
-            if new_speed > last_speed:
-                reason = 'temp_rising'
-            elif new_speed < last_speed:
-                reason = 'temp_falling'
-
-            detailed_logger.log_hysteresis_decision(
-                fan_index=fan_index,
-                temp=temp,
-                last_speed=last_speed,
-                target_speed=target_speed,
-                new_speed=new_speed,
-                reason=reason
-            )
+            else:
+                # FALLBACK: last_speed is non-standard (manual override)
+                # Use target zone's down threshold for hysteresis
+                if idx > 0:
+                    # We're in a defined zone - use its down threshold
+                    fallback_down = thresholds[idx - 1][1]
+                    if temp <= fallback_down:
+                        new_speed = target_speed
+                        self.logger.debug(f"Fan {fan_index}: Non-standard speed {last_speed}%, "
+                                         f"using fallback hysteresis (down={fallback_down}°C)")
+                else:
+                    # Below all thresholds - drop to minimum immediately
+                    new_speed = target_speed
 
         self.last_speed[fan_index] = new_speed
         return new_speed
