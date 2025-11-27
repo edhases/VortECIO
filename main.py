@@ -291,9 +291,14 @@ class AppLogic:
 
     def set_language(self, lang_code: str):
         self.config.set('language', lang_code)
+        localization.set_language(lang_code)
 
         # Recreate entire UI to apply new language strings
         if hasattr(self, 'main_window') and self.main_window.winfo_exists():
+            # Close any child windows first
+            for widget in self.main_window.winfo_children():
+                if isinstance(widget, ctk.CTkToplevel):
+                    widget.destroy()
             self.main_window.recreate_ui()
 
         # Close outdated settings window

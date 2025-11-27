@@ -1,231 +1,73 @@
-LOCALIZATION = {
-    "en": {
-        "app_title": "VortECIO Fan Control",
-        "file_menu": "File",
-        "load_config_menu": "Load Config",
-        "hide_to_tray_menu": "Hide to Tray",
-        "quit_menu": "Quit",
-        "settings_menu": "Settings",
-        "theme_menu": "Theme",
-        "language_menu": "Language",
-        "fan_control_mode_label": "Fan Control Mode",
-        "disabled_mode": "Disabled",
-        "read_only_mode": "Read-only",
-        "automatic_mode": "Automatic",
-        "no_config_loaded_msg": "Load an NBFC config file via the File menu.",
-        "model_label": "Model",
-        "driver_label": "Driver",
-        "current_value_label": "Current Value",
-        "current_speed_rpm_label": "Speed (RPM)",
-        "set_speed_label": "Set ({min}-{max})",
-        "apply_button": "Apply",
-        "theme_light": "Light",
-        "theme_dark": "Dark",
-        "theme_black": "Black",
-        "lang_en": "English",
-        "lang_de": "Deutsch",
-        "lang_pl": "Polski",
-        "lang_uk": "Українська",
-        "lang_ja": "日本語",
-        "autostart_windows": "Start with Windows",
-        "plugins_menu": "Plugins",
-        "manage_plugins_menu": "Manage Plugins...",
-        "no_fans_found_msg": "No fans found in config.",
-        "slider_auto": "Auto",
-        "slider_read": "Read",
-        "slider_off": "Off",
-        "manage_plugins_title": "Manage Plugins",
-        "select_active_plugins_label": "Select active plugins:",
-        "restart_required_title": "Restart Required",
-        "restart_required_msg": "Please restart the application to apply plugin changes.",
-        "tray_show": "Show",
-        "tray_quit": "Quit"
-    },
-    "uk": {
-        "app_title": "VortECIO Керування Вентиляторами",
-        "file_menu": "Файл",
-        "load_config_menu": "Завантажити конфіг",
-        "hide_to_tray_menu": "Сховати в трей",
-        "quit_menu": "Вихід",
-        "settings_menu": "Налаштування",
-        "theme_menu": "Тема",
-        "language_menu": "Мова",
-        "fan_control_mode_label": "Режим керування",
-        "disabled_mode": "Вимкнено",
-        "read_only_mode": "Тільки читання",
-        "automatic_mode": "Автоматично",
-        "no_config_loaded_msg": "Завантажте конфіг NBFC через меню 'Файл'.",
-        "model_label": "Модель",
-        "driver_label": "Драйвер",
-        "current_value_label": "Поточне значення",
-        "current_speed_rpm_label": "Швидкість (RPM)",
-        "set_speed_label": "Встановити ({min}-{max})",
-        "apply_button": "Застосувати",
-        "theme_light": "Світла",
-        "theme_dark": "Темна",
-        "theme_black": "Чорна",
-        "lang_en": "English",
-        "lang_de": "Deutsch",
-        "lang_pl": "Polski",
-        "lang_uk": "Українська",
-        "lang_ja": "日本語",
-        "autostart_windows": "Запускати з Windows",
-        "plugins_menu": "Плагіни",
-        "manage_plugins_menu": "Керувати плагінами...",
-        "no_fans_found_msg": "Вентилятори не знайдено в конфігурації.",
-        "slider_auto": "Авто",
-        "slider_read": "Читати",
-        "slider_off": "Вимк",
-        "manage_plugins_title": "Керування плагінами",
-        "select_active_plugins_label": "Виберіть активні плагіни:",
-        "restart_required_title": "Потрібне перезавантаження",
-        "restart_required_msg": "Будь ласка, перезапустіть програму, щоб застосувати зміни плагінів.",
-        "tray_show": "Показати",
-        "tray_quit": "Вихід"
-    },
-    "de": {
-        "app_title": "VortECIO Lüftersteuerung",
-        "file_menu": "Datei",
-        "load_config_menu": "Konfiguration laden",
-        "hide_to_tray_menu": "In Taskleiste minimieren",
-        "quit_menu": "Beenden",
-        "settings_menu": "Einstellungen",
-        "theme_menu": "Thema",
-        "language_menu": "Sprache",
-        "fan_control_mode_label": "Lüftersteuerungsmodus",
-        "disabled_mode": "Deaktiviert",
-        "read_only_mode": "Nur Lesen",
-        "automatic_mode": "Automatisch",
-        "no_config_loaded_msg": "Laden Sie eine NBFC-Konfigurationsdatei über das Menü 'Datei'.",
-        "model_label": "Modell",
-        "driver_label": "Treiber",
-        "current_value_label": "Aktueller Wert",
-        "current_speed_rpm_label": "Geschwindigkeit (RPM)",
-        "set_speed_label": "Einstellen ({min}-{max})",
-        "apply_button": "Anwenden",
-        "theme_light": "Hell",
-        "theme_dark": "Dunkel",
-        "theme_black": "Schwarz",
-        "lang_en": "English",
-        "lang_de": "Deutsch",
-        "lang_pl": "Polski",
-        "lang_uk": "Українська",
-        "lang_ja": "日本語",
-        "autostart_windows": "Mit Windows starten",
-        "plugins_menu": "Plugins",
-        "manage_plugins_menu": "Plugins verwalten...",
-        "no_fans_found_msg": "Keine Lüfter in der Konfiguration gefunden.",
-        "slider_auto": "Auto",
-        "slider_read": "Lesen",
-        "slider_off": "Aus",
-        "manage_plugins_title": "Plugins verwalten",
-        "select_active_plugins_label": "Aktive Plugins auswählen:",
-        "restart_required_title": "Neustart erforderlich",
-        "restart_required_msg": "Bitte starten Sie die Anwendung neu, um die Plugin-Änderungen zu übernehmen.",
-        "tray_show": "Anzeigen",
-        "tray_quit": "Beenden"
-    },
-    "pl": {
-        "app_title": "VortECIO Kontrola Wentylatorów",
-        "file_menu": "Plik",
-        "load_config_menu": "Załaduj konfigurację",
-        "hide_to_tray_menu": "Ukryj w zasobniku",
-        "quit_menu": "Wyjście",
-        "settings_menu": "Ustawienia",
-        "theme_menu": "Motyw",
-        "language_menu": "Język",
-        "fan_control_mode_label": "Tryb kontroli wentylatorów",
-        "disabled_mode": "Wyłączony",
-        "read_only_mode": "Tylko do odczytu",
-        "automatic_mode": "Automatyczny",
-        "no_config_loaded_msg": "Załaduj plik konfiguracyjny NBFC z menu 'Plik'.",
-        "model_label": "Model",
-        "driver_label": "Sterownik",
-        "current_value_label": "Aktualna wartość",
-        "current_speed_rpm_label": "Prędkość (RPM)",
-        "set_speed_label": "Ustaw ({min}-{max})",
-        "apply_button": "Zastosuj",
-        "theme_light": "Jasny",
-        "theme_dark": "Ciemny",
-        "theme_black": "Czarny",
-        "lang_en": "English",
-        "lang_de": "Deutsch",
-        "lang_pl": "Polski",
-        "lang_uk": "Українська",
-        "lang_ja": "日本語",
-        "autostart_windows": "Uruchom z systemem Windows",
-        "plugins_menu": "Wtyczki",
-        "manage_plugins_menu": "Zarządzaj wtyczkami...",
-        "no_fans_found_msg": "Nie znaleziono wentylatorów w konfiguracji.",
-        "slider_auto": "Auto",
-        "slider_read": "Odczyt",
-        "slider_off": "Wył",
-        "manage_plugins_title": "Zarządzaj wtyczkami",
-        "select_active_plugins_label": "Wybierz aktywne wtyczki:",
-        "restart_required_title": "Wymagane ponowne uruchomienie",
-        "restart_required_msg": "Uruchom ponownie aplikację, aby zastosować zmiany wtyczek.",
-        "tray_show": "Pokaż",
-        "tray_quit": "Wyjdź"
-    },
-    "ja": {
-        "app_title": "VortECIO ファンコントロール",
-        "file_menu": "ファイル",
-        "load_config_menu": "設定を読み込む",
-        "hide_to_tray_menu": "トレイに隠す",
-        "quit_menu": "終了",
-        "settings_menu": "設定",
-        "theme_menu": "テーマ",
-        "language_menu": "言語",
-        "fan_control_mode_label": "ファン制御モード",
-        "disabled_mode": "無効",
-        "read_only_mode": "読み取り専用",
-        "automatic_mode": "自動",
-        "no_config_loaded_msg": "「ファイル」メニューからNBFC設定ファイルを読み込んでください。",
-        "model_label": "モデル",
-        "driver_label": "ドライバー",
-        "current_value_label": "現在の値",
-        "current_speed_rpm_label": "速度 (RPM)",
-        "set_speed_label": "設定 ({min}-{max})",
-        "apply_button": "適用",
-        "theme_light": "ライト",
-        "theme_dark": "ダーク",
-        "theme_black": "ブラック",
-        "lang_en": "English",
-        "lang_de": "Deutsch",
-        "lang_pl": "Polski",
-        "lang_uk": "Українська",
-        "lang_ja": "日本語",
-        "autostart_windows": "Windowsと共に起動",
-        "plugins_menu": "プラグイン",
-        "manage_plugins_menu": "プラグインの管理...",
-        "no_fans_found_msg": "設定にファンが見つかりません。",
-        "slider_auto": "自動",
-        "slider_read": "読み",
-        "slider_off": "オフ",
-        "manage_plugins_title": "プラグインの管理",
-        "select_active_plugins_label": "アクティブなプラグインを選択:",
-        "restart_required_title": "再起動が必要です",
-        "restart_required_msg": "プラグインの変更を適用するには、アプリケーションを再起動してください。",
-        "tray_show": "表示",
-        "tray_quit": "終了"
+import json
+import os
+import logging
+
+logger = logging.getLogger('FanControl.Localization')
+
+_translations = {}
+_current_language = 'en'
+_available_languages = {}
+
+def load_languages():
+    """Load all language files from the 'lang' directory."""
+    global _translations, _available_languages
+    lang_dir = 'lang'
+    if not os.path.exists(lang_dir):
+        logger.error(f"Language directory '{lang_dir}' not found.")
+        return
+
+    for filename in os.listdir(lang_dir):
+        if filename.endswith('.json'):
+            lang_code = filename[:-5]
+            filepath = os.path.join(lang_dir, filename)
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    _translations[lang_code] = json.load(f)
+                    # Assuming the language name is in the file, e.g., "lang_name": "English"
+                    # For now, just use the code
+                    _available_languages[lang_code] = lang_code
+            except (json.JSONDecodeError, OSError) as e:
+                logger.error(f"Failed to load language file {filename}: {e}")
+
+    if 'en' not in _translations:
+        logger.error("Default language 'en' not found.")
+
+def set_language(lang_code: str):
+    """Set the current language for the application."""
+    global _current_language
+    if lang_code in _translations:
+        _current_language = lang_code
+    else:
+        logger.warning(f"Language '{lang_code}' not found, falling back to 'en'.")
+        _current_language = 'en'
+
+def translate(key: str) -> str:
+    """Translate a key into the current language."""
+    # Try current language first
+    translation = _translations.get(_current_language, {}).get(key)
+    if translation:
+        return translation
+
+    # Fallback to English
+    translation = _translations.get('en', {}).get(key)
+    if translation:
+        logger.warning(f"Translation key '{key}' not found in '{_current_language}', using 'en' fallback.")
+        return translation
+
+    # If key not found anywhere
+    logger.error(f"Translation key '{key}' not found in any language file.")
+    return key
+
+def get_available_languages():
+    """Return a dictionary of available language codes and their names."""
+    # This can be enhanced to return full names if they are in the JSON files
+    return {
+        "en": "🇬🇧 English",
+        "uk": "🇺🇦 Українська",
+        "de": "🇩🇪 Deutsch",
+        "pl": "🇵🇱 Polski",
+        "ja": "🇯🇵 日本語"
     }
-}
 
-class Translator:
-    def __init__(self, language="en"):
-        self.language = language
-
-    def set_language(self, language):
-        self.language = language
-
-    def get(self, key):
-        return LOCALIZATION.get(self.language, LOCALIZATION["en"]).get(key, key)
-
-# Global translator instance
-translator = Translator()
-
-def set_language(language_code):
-    translator.set_language(language_code)
-
-def translate(key):
-    return translator.get(key)
+# Initial load
+load_languages()

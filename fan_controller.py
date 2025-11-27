@@ -207,7 +207,12 @@ class FanController:
                             self.app_logic.set_fan_speed_internal(i, fan['reset_val'], force_write=True)
                             self.fan_states[i] = 'released'
 
-                    if fan_mode != disabled_val:
+                    if fan_mode == disabled_val:
+                        # In disabled mode, clear the UI and do nothing else
+                        if self.fan_states.get(i) != 'released':
+                            self.app_logic.main_window.after(0, self.app_logic.main_window.clear_fan_display, i)
+                    else:
+                        # For all other modes (Auto, Manual, Read-only), read and display RPM
                         rpm = self.app_logic.driver.read_register(fan['read_reg'])
                         if rpm is not None:
                             percent = self._calculate_percent(rpm, fan)

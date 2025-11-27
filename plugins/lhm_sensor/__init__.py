@@ -46,7 +46,8 @@ class LhmSensor:
         if not HAS_LHM:
             raise ImportError("LibreHardwareMonitor not available")
 
-        logger.info("Initializing LibreHardwareMonitor Computer")
+        self.logger = logging.getLogger('FanControl.LHM')
+        self.logger.info("Initializing LibreHardwareMonitor Computer")
 
         self.computer = Computer()
         self.computer.IsCpuEnabled = True
