@@ -14,7 +14,7 @@ from config import AppConfig
 from fan_controller import FanController
 from plugin_manager import PluginManager
 import customtkinter as ctk
-import themes
+import tkinter as tk
 import localization
 from utils import denormalize_fan_speed
 from advanced_logging import init_detailed_logging, get_detailed_logger
@@ -42,6 +42,14 @@ class NbfcConfigParser:
         self.ec_command_port: int = 0x66
         self.register_write_mode: str = 'Set'
 
+    @staticmethod
+    def _to_int(value: str) -> int:
+        """Convert XML value to int, supporting floats and hex."""
+        try:
+            return int(value, 0)  # Handles '123' and '0xFF'
+        except (ValueError, TypeError):
+            return int(float(value))  # Handles '123.0'
+
     def parse(self) -> bool:
         if not self.file or not os.path.exists(self.file):
             return False
@@ -55,7 +63,7 @@ class NbfcConfigParser:
             # Validate poll interval (100ms - 10s is safe range)
             poll_interval_node = root.find('.//EcPollInterval')
             if poll_interval_node is not None and poll_interval_node.text:
-                poll_interval = int(poll_interval_node.text)
+                poll_interval = self._to_int(poll_interval_node.text)
                 if not (100 <= poll_interval <= 10000):
                     raise ValueError(f"Invalid ec_poll_interval: {poll_interval}. Must be 100-10000 ms.")
                 self.ec_poll_interval = poll_interval
@@ -66,7 +74,7 @@ class NbfcConfigParser:
 
             # Validate critical temperature (0-150°C reasonable range)
             critical_temp_node = root.find('.//CriticalTemperature')
-            if critical_temp_node is not None:
+            if critical_temp_node is not None and critical_temp_node.text is not None:
                 critical_temp = float(critical_temp_node.text)
                 if not (0 <= critical_temp <= 150):
                     raise ValueError(f"Invalid critical_temperature: {critical_temp}. Must be 0-150°C.")
@@ -77,9 +85,9 @@ class NbfcConfigParser:
                 data_port = ec_io_ports.find('DataPort')
                 cmd_port = ec_io_ports.find('CommandPort')
                 if data_port is not None and data_port.text:
-                    self.ec_data_port = int(data_port.text, 0)
+                    self.ec_data_port = self._to_int(data_port.text)
                 if cmd_port is not None and cmd_port.text:
-                    self.ec_command_port = int(cmd_port.text, 0)
+                    self.ec_command_port = self._to_int(cmd_port.text)
 
             write_mode_node = root.find('RegisterWriteMode')
             if write_mode_node is not None and write_mode_node.text:
@@ -88,8 +96,8 @@ class NbfcConfigParser:
             self.fans.clear()
             # Validate fan speeds (0-255 for EC registers)
             for fan_node in root.findall('.//FanConfiguration'):
-                min_speed = int(fan_node.find('MinSpeedValue').text)
-                max_speed = int(fan_node.find('MaxSpeedValue').text)
+                min_speed = self._to_int(fan_node.find('MinSpeedValue').text)
+                max_speed = self._to_int(fan_node.find('MaxSpeedValue').text)
 
                 # Validate range
                 if not (0 <= min_speed <= 255):
@@ -98,8 +106,8 @@ class NbfcConfigParser:
                     raise ValueError(f"Invalid max_speed: {max_speed}. Must be 0-255.")
 
                 # Validate register addresses (EC typically uses 0x00-0xFF)
-                read_reg = int(fan_node.find('ReadRegister').text)
-                write_reg = int(fan_node.find('WriteRegister').text)
+                read_reg = self._to_int(fan_node.find('ReadRegister').text)
+                write_reg = self._to_int(fan_node.find('WriteRegister').text)
                 if not (0x00 <= read_reg <= 0xFF):
                     raise ValueError(f"Invalid read_reg: 0x{read_reg:X}. Must be 0x00-0xFF.")
                 if not (0x00 <= write_reg <= 0xFF):
@@ -115,7 +123,7 @@ class NbfcConfigParser:
                         fan_name = name_node.text
 
                 reset_val_node = fan_node.find('FanSpeedResetValue')
-                reset_val = int(reset_val_node.text) if reset_val_node is not None and reset_val_node.text else 255
+                reset_val = self._to_int(reset_val_node.text) if reset_val_node is not None and reset_val_node.text else 255
 
                 # Store validated values
                 fan: Dict[str, Any] = {
@@ -131,9 +139,9 @@ class NbfcConfigParser:
 
                 # Validate temperature thresholds in fan curves
                 for threshold in fan_node.findall('.//TemperatureThreshold'):
-                    up_temp = int(threshold.find('UpThreshold').text)
-                    down_temp = int(threshold.find('DownThreshold').text)
-                    fan_speed = int(threshold.find('FanSpeed').text)
+                    up_temp = self._to_int(threshold.find('UpThreshold').text)
+                    down_temp = self._to_int(threshold.find('DownThreshold').text)
+                    fan_speed = self._to_int(threshold.find('FanSpeed').text)
 
                     if not (0 <= up_temp <= 150):
                         raise ValueError(f"Invalid up_temp: {up_temp}. Must be 0-150°C.")
@@ -152,7 +160,7 @@ class NbfcConfigParser:
         except ValueError as e:
             logging.error(f"XML validation failed: {e}")
             return False
-        except (ET.ParseError, TypeError) as e:
+        except (ET.ParseError, TypeError, AttributeError) as e:
             logging.error(f"Failed to parse config: {e}")
             return False
 
@@ -167,22 +175,31 @@ if sys.platform == 'win32':
             except Exception as e:
                 logging.error(f"Failed to initialize WMI: {e}")
 
-        def get_temperature(self) -> float:
+        def get_temperature(self) -> Optional[float]:
             if not self.w:
-                return 45.0
+                return None
             try:
                 temps = self.w.MSAcpi_ThermalZoneTemperature()
+                if not temps:
+                    logging.warning("WMI thermal zone sensor not found.")
+                    return None
+
                 max_t = 0.0
                 for t in temps:
                     c = (t.CurrentTemperature - 2732) / 10.0
                     if c > max_t:
                         max_t = c
-                return max_t if max_t > 20.0 else 45.0
-            except Exception:
-                return 45.0
+                return max_t if max_t > 0 else None
+            except wmi.x_wmi as e:
+                logging.error(f"WMI query failed: {e}")
+                return None
+            except pythoncom.com_error as e:
+                logging.error(f"COM error during WMI query: {e}")
+                return None
 
         def get_temperatures(self) -> Tuple[Optional[float], Optional[float]]:
-            return self.get_temperature(), None
+            temp = self.get_temperature()
+            return temp, None
 
         def shutdown(self) -> None:
             pythoncom.CoUninitialize()
@@ -263,7 +280,8 @@ class AppLogic:
                         f"Theme changed. Reopen Settings if needed.",
                         duration=3000
                     )
-            except:
+            except (AttributeError, tk.TclError):
+                # This can happen if the window is already destroyed. Safe to ignore.
                 pass
 
     def set_language(self, lang_code: str):
@@ -278,7 +296,8 @@ class AppLogic:
             try:
                 if self.main_window.settings_window.winfo_exists():
                     self.main_window.settings_window.destroy()
-            except:
+            except (AttributeError, tk.TclError):
+                # This can happen if the window is already destroyed. Safe to ignore.
                 pass
 
     def _load_config(self, filepath: str) -> None:

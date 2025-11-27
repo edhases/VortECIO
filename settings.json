@@ -5,5 +5,8 @@
     "autostart": false,
     "active_plugins": [],
     "detailed_logging": false,
-    "log_level": "INFO"
+    "log_level": "INFO",
+    "critical_temp_action": "ask",
+    "show_critical_warning": true,
+    "prefer_lhm": true
 }
