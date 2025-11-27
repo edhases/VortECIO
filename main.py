@@ -7,18 +7,24 @@ import time
 import sys
 import threading
 from tkinter import messagebox
+from typing import List, Dict, Any, Optional, Tuple
 
 from hardware import EcDriver
-import wmi
-import pythoncom
 from ui.main_window import MainWindow
 from config import AppConfig
 from fan_controller import FanController
 from plugin_manager import PluginManager
-from system_tray import SystemTray
 import customtkinter as ctk
 import themes
 import localization
+from utils import denormalize_fan_speed
+from advanced_logging import init_detailed_logging, get_detailed_logger
+
+if sys.platform == 'win32':
+    import wmi
+    import pythoncom
+    from system_tray import SystemTray
+
 
 if sys.platform == 'win32':
     import winreg
@@ -26,24 +32,27 @@ if sys.platform == 'win32':
 
 
 class NbfcConfigParser:
-    def __init__(self, xml_file):
-        self.file = xml_file
-        self.fans = []
-        self.model_name = "No config loaded"
-        self.ec_poll_interval = 3000  # Default value
-        self.read_write_words = False # Default value
+    def __init__(self, xml_file: Optional[str]) -> None:
+        self.file: Optional[str] = xml_file
+        self.fans: List[Dict[str, Any]] = []
+        self.model_name: str = "No config loaded"
+        self.ec_poll_interval: int = 3000
+        self.read_write_words: bool = False
+        self.critical_temperature: float = 90.0
+        self.ec_data_port: int = 0x62
+        self.ec_command_port: int = 0x66
+        self.register_write_mode: str = 'Set'
 
-    def parse(self):
+    def parse(self) -> bool:
         if not self.file or not os.path.exists(self.file):
             return False
         try:
             tree = ET.parse(self.file)
             root = tree.getroot()
             model_node = root.find('NotebookModel')
-            if model_node is not None:
+            if model_node is not None and model_node.text is not None:
                 self.model_name = model_node.text
 
-            # Parse global settings
             poll_interval_node = root.find('EcPollInterval')
             if poll_interval_node is not None and poll_interval_node.text:
                 self.ec_poll_interval = int(poll_interval_node.text)
@@ -52,27 +61,52 @@ class NbfcConfigParser:
             if read_write_words_node is not None and read_write_words_node.text:
                 self.read_write_words = read_write_words_node.text.lower() == 'true'
 
+            critical_temp_node = root.find('CriticalTemperature')
+            if critical_temp_node is not None and critical_temp_node.text:
+                self.critical_temperature = float(critical_temp_node.text)
+                logging.info(f"Critical temperature: {self.critical_temperature}°C")
+
+            ec_io_ports = root.find('EcIoPorts')
+            if ec_io_ports is not None:
+                data_port = ec_io_ports.find('DataPort')
+                cmd_port = ec_io_ports.find('CommandPort')
+                if data_port is not None and data_port.text:
+                    self.ec_data_port = int(data_port.text, 0)
+                if cmd_port is not None and cmd_port.text:
+                    self.ec_command_port = int(cmd_port.text, 0)
+
+            write_mode_node = root.find('RegisterWriteMode')
+            if write_mode_node is not None and write_mode_node.text:
+                self.register_write_mode = write_mode_node.text
+
             self.fans.clear()
             for fan_config in root.findall('.//FanConfiguration'):
+                fan_name = 'Unnamed Fan'
                 display_name_node = fan_config.find('FanDisplayName')
                 if display_name_node is not None and display_name_node.text:
                     fan_name = display_name_node.text
                 else:
                     name_node = fan_config.find('Name')
-                    fan_name = name_node.text if name_node is not None else 'Unnamed Fan'
+                    if name_node is not None and name_node.text:
+                        fan_name = name_node.text
 
-                reset_value_node = fan_config.find('FanSpeedResetValue')
-                reset_value = int(reset_value_node.text) if reset_value_node is not None and reset_value_node.text else 255
+                reset_val_node = fan_config.find('FanSpeedResetValue')
+                reset_val = int(reset_val_node.text) if reset_val_node is not None and reset_val_node.text else 255
 
-                fan = {
+                min_speed = int(fan_config.find('MinSpeedValue').text)
+                max_speed = int(fan_config.find('MaxSpeedValue').text)
+
+                fan: Dict[str, Any] = {
                     'name': fan_name,
                     'read_reg': int(fan_config.find('ReadRegister').text),
                     'write_reg': int(fan_config.find('WriteRegister').text),
-                    'min_speed': int(fan_config.find('MinSpeedValue').text),
-                    'max_speed': int(fan_config.find('MaxSpeedValue').text),
-                    'reset_val': reset_value,
+                    'min_speed': min_speed,
+                    'max_speed': max_speed,
+                    'reset_val': reset_val,
+                    'is_inverted': min_speed > max_speed,
                     'temp_thresholds': []
                 }
+
                 thresholds_node = fan_config.find('TemperatureThresholds')
                 if thresholds_node is not None:
                     for threshold in thresholds_node.findall('TemperatureThreshold'):
@@ -82,267 +116,273 @@ class NbfcConfigParser:
                         fan['temp_thresholds'].append((up, down, speed))
                 self.fans.append(fan)
             return True
-        except (ET.ParseError, ValueError) as e:
+        except (ET.ParseError, ValueError, TypeError) as e:
             logging.error(f"Failed to parse NBFC config: {e}")
             return False
 
 
-class WmiTempSensor:
-    def get_temperature(self):
-        try:
-            pythoncom.CoInitialize()
-            w = wmi.WMI(namespace="root\\wmi")
-            temps = w.MSAcpi_ThermalZoneTemperature()
-            # Search for the maximum temperature > 20°C
-            max_t = 0
-            for t in temps:
-                c = (t.CurrentTemperature - 2732) / 10.0
-                if c > max_t: max_t = c
-            return max_t if max_t > 0 else 45.0
-        except Exception:
-            return 45.0 # Return a fallback value in case of an error
-        finally:
-            pythoncom.CoUninitialize()
+if sys.platform == 'win32':
+    class WmiTempSensor:
+        def __init__(self) -> None:
+            self.w: Optional[wmi.WMI] = None
+            try:
+                pythoncom.CoInitialize()
+                self.w = wmi.WMI(namespace="root\\wmi")
+            except Exception as e:
+                logging.error(f"Failed to initialize WMI: {e}")
 
-    def get_temperatures(self):
-        # Fallback sensor only provides one temperature, return it as CPU temp
-        return self.get_temperature(), None
+        def get_temperature(self) -> float:
+            if not self.w:
+                return 45.0
+            try:
+                temps = self.w.MSAcpi_ThermalZoneTemperature()
+                max_t = 0.0
+                for t in temps:
+                    c = (t.CurrentTemperature - 2732) / 10.0
+                    if c > max_t:
+                        max_t = c
+                return max_t if max_t > 20.0 else 45.0
+            except Exception:
+                return 45.0
+
+        def get_temperatures(self) -> Tuple[Optional[float], Optional[float]]:
+            return self.get_temperature(), None
+
+        def shutdown(self) -> None:
+            pythoncom.CoUninitialize()
+else:
+    class WmiTempSensor:
+        def __init__(self) -> None:
+            logging.info("Running on non-Windows OS, WMI sensor is disabled.")
+        def get_temperature(self) -> float:
+            return 45.0
+        def get_temperatures(self) -> Tuple[Optional[float], Optional[float]]:
+            return 45.0, None
+        def shutdown(self) -> None:
+            pass
+
 
 class AppLogic:
-    def __init__(self):
-        self.config = AppConfig()
-        self.driver = EcDriver()
-        self.nbfc_parser = NbfcConfigParser(None)
-        self.stop_event = threading.Event()
-        self.update_thread = None
-        self.default_sensor = WmiTempSensor()
-        self.plugin_sensor = None
-        self.fan_controller = FanController(self)
-        self.system_tray = SystemTray(self)
-        self.fan_control_disabled = False
+    def __init__(self) -> None:
+        self.config: AppConfig = AppConfig()
+        self.driver: EcDriver = EcDriver()
+        self.nbfc_parser: NbfcConfigParser = NbfcConfigParser(None)
+        self.stop_event: threading.Event = threading.Event()
+        self.default_sensor: WmiTempSensor = WmiTempSensor()
+        self.plugin_sensor: Optional[Any] = None
+        self.fan_controller: FanController = FanController(self)
+        self.fan_control_disabled: bool = False
 
-        # Setup localization
+        if sys.platform == 'win32':
+            self.system_tray: Optional[SystemTray] = SystemTray(self)
+        else:
+            self.system_tray = None
+
         localization.set_language(self.config.get("language"))
 
-        self.main_window = MainWindow(self)
+        # Initialize detailed logging from config
+        detailed_logging_enabled = self.config.get("detailed_logging", False)
+        init_detailed_logging(detailed_logging_enabled)
 
-        # Apply theme now that the window exists
+        # Update regular logger level based on detailed logging
+        if detailed_logging_enabled:
+            logging.getLogger('FanControl').setLevel(logging.DEBUG)
+
+        self.main_window: MainWindow = MainWindow(self)
         self.apply_theme(self.config.get("theme"))
-
-        # Defer starting background tasks until the main loop is running
         self.main_window.after(100, self.start_background_tasks)
 
-    def start_background_tasks(self):
+    def start_background_tasks(self) -> None:
         self._load_last_config()
-
-        # Initialize Plugin Manager
-        self.plugin_manager = PluginManager(self)
+        self.plugin_manager: PluginManager = PluginManager(self)
         self.plugin_manager.discover_plugins()
         self.plugin_manager.initialize_plugins()
         self.fan_controller.start()
 
-    def get_active_sensor(self):
-        # Якщо плагін зареєстрував сенсор — використовуємо його
-        if self.plugin_sensor:
-            return self.plugin_sensor
-        return self.default_sensor
+    def get_active_sensor(self) -> Any:
+        return self.plugin_sensor if self.plugin_sensor else self.default_sensor
 
-    def register_sensor(self, sensor_instance):
-        print(f"New sensor registered: {sensor_instance}")
+    def register_sensor(self, sensor_instance: Any) -> None:
+        logging.info(f"New sensor registered: {sensor_instance}")
         self.plugin_sensor = sensor_instance
 
-    def apply_theme(self, theme_name):
+    def apply_theme(self, theme_name: str) -> None:
         self.config.set("theme", theme_name)
-        # customtkinter handles the theme switching internally
-        valid_themes = ["light", "dark"] # Add "system" if you want to support it
+        valid_themes = ["light", "dark", "system"]
         if theme_name in valid_themes:
             ctk.set_appearance_mode(theme_name)
 
-    def set_language(self, lang_code):
+    def set_language(self, lang_code: str) -> None:
         self.config.set("language", lang_code)
         localization.set_language(lang_code)
         self.main_window.recreate_ui()
 
-    def _load_config(self, filepath):
+    def _load_config(self, filepath: str) -> None:
         if self.update_thread and self.update_thread.is_alive():
             self.stop_event.set()
             self.update_thread.join(timeout=1.0)
 
         parser = NbfcConfigParser(filepath)
         if parser.parse():
+            for fan in parser.fans:
+                fan['temp_thresholds'].sort(key=lambda x: x[0])
             self.nbfc_parser = parser
+
+            # Log config load
+            detailed_logger = get_detailed_logger()
+            if detailed_logger:
+                detailed_logger.log_config_loaded(
+                    model=parser.model_name,
+                    fans=len(parser.fans),
+                    critical_temp=parser.critical_temperature
+                )
+
+            self.fan_controller.critical_temperature = parser.critical_temperature
             self.config.set("last_config_path", filepath)
+            if parser.ec_data_port != 0x62 or parser.ec_command_port != 0x66:
+                self.driver = EcDriver(ec_data_port=parser.ec_data_port, ec_command_port=parser.ec_command_port)
+                logging.info(f"EC driver reinitialized: Data=0x{parser.ec_data_port:02X}, Cmd=0x{parser.ec_command_port:02X}")
             self.main_window.model_label.configure(text=f"Model: {self.nbfc_parser.model_name}")
             self.main_window.create_fan_widgets(self.nbfc_parser.fans)
-
-            self.stop_event.clear()
-            self.update_thread = threading.Thread(target=self.update_loop, daemon=True)
-            self.update_thread.start()
         else:
             self.config.set("last_config_path", None)
             self.nbfc_parser = NbfcConfigParser(None)
             self.main_window.model_label.configure(text="Model: No config loaded")
-            self.main_window.create_fan_widgets([]) # Clear fan widgets
+            self.main_window.create_fan_widgets([])
 
-    def _load_last_config(self):
+    def _load_last_config(self) -> None:
         last_config = self.config.get("last_config_path")
         if last_config:
             self._load_config(last_config)
 
-    def load_config_file(self):
+    def load_config_file(self) -> None:
         filepath = self.main_window.get_selected_filepath()
         if filepath:
             self._load_config(filepath)
 
-    def set_fan_speed(self, fan_index):
+    def set_fan_speed(self, fan_index: int) -> None:
         slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
         if not slider_var:
             return
-
         fan = self.nbfc_parser.fans[fan_index]
-        min_val = fan['min_speed']
-        max_val = fan['max_speed']
-        disabled_val = min_val - 2
-        read_only_val = min_val - 1
+        min_val, max_val = fan['min_speed'], fan['max_speed']
+        disabled_val, read_only_val = min_val - 2, min_val - 1
         auto_val = max_val + 1
-
-        # If the slider is set to "Auto", "Read-only", or "Disabled", we don't do anything here.
         if slider_var.get() in (auto_val, read_only_val, disabled_val):
             return
+        self.set_manual_fan_speed(fan_index, slider_var.get())
 
-        self.set_fan_speed_internal(fan_index, slider_var.get())
+    def set_manual_fan_speed(self, fan_index: int, speed_percent: int) -> None:
+        """
+        Set fan to manual speed (percentage 0-100).
+        Args:
+            fan_index: Fan index
+            speed_percent: Target speed percentage (0-100)
+        """
+        fan = self.nbfc_parser.fans[fan_index]
+        # Convert percentage to raw EC value
+        raw_speed = denormalize_fan_speed(speed_percent, fan)
+        # Apply immediately
+        self.set_fan_speed_internal(fan_index, raw_speed)
 
-    def set_fan_speed_internal(self, fan_index, speed, force_write=False):
+    def set_fan_mode(self, fan_index: int, mode: str):
+        """
+        Set fan control mode.
+        Args:
+            mode: 'Auto', 'Manual', 'Read-only', 'Disabled'
+        """
+        fan = self.nbfc_parser.fans[fan_index]
+
+        mode_mapping = {
+            'Auto': fan['max_speed'] + 1,
+            'Manual': -1,  # Special flag, use current slider value
+            'Read-only': fan['min_speed'] - 1,
+            'Disabled': fan['min_speed'] - 2
+        }
+
+        self.fan_controller.set_fan_mode_cached(fan_index, mode_mapping[mode])
+
+        if mode == 'Disabled':
+            # Write reset value immediately
+            self.set_fan_speed_internal(fan_index, fan['reset_val'], force_write=True)
+
+    def set_fan_speed_internal(self, fan_index: int, speed: int, force_write: bool = False) -> None:
         if self.fan_control_disabled:
             return
-
         if not force_write:
             slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
             if not slider_var:
                 return
-
             fan = self.nbfc_parser.fans[fan_index]
             min_val = fan['min_speed']
-            disabled_val = min_val - 2
-            read_only_val = min_val - 1
-
+            disabled_val, read_only_val = min_val - 2, min_val - 1
             if slider_var.get() in (read_only_val, disabled_val):
                 return
-
         threading.Thread(target=self._set_fan_speed_thread, args=(fan_index, speed)).start()
 
-    def _set_fan_speed_thread(self, fan_index, speed):
+    def _set_fan_speed_thread(self, fan_index: int, speed: int) -> None:
         if self.fan_control_disabled:
             return
         fan = self.nbfc_parser.fans[fan_index]
         write_reg = fan['write_reg']
-
-        # Store the speed that is about to be written
         self.fan_controller.set_last_speed(fan_index, speed)
-
         self.driver.write_register(write_reg, speed)
 
-    def update_loop(self):
-        while not self.stop_event.is_set():
-            if self.nbfc_parser and self.nbfc_parser.fans:
-                self.main_window.after(0, self._update_fan_readings_thread_safe)
-            self.stop_event.wait(2.0)
-
-    def _update_fan_readings_thread_safe(self):
-        for i, fan in enumerate(self.nbfc_parser.fans):
-            slider_var = self.main_window.fan_vars.get(f'fan_{i}_write')
-            if not slider_var:
-                continue
-
-            min_val = fan['min_speed']
-            disabled_val = min_val - 2
-
-            # This check is now safe as it's running in the main thread
-            if slider_var.get() != disabled_val:
-                read_reg = fan['read_reg']
-                # Reading from the driver can be slow, so we do it in a separate thread
-                threading.Thread(target=self._read_and_update_fan, args=(i, read_reg)).start()
-
-    def _read_and_update_fan(self, fan_index, read_reg):
-        rpm_value = self.driver.read_register(read_reg)
-        if rpm_value is not None:
-            fan = self.nbfc_parser.fans[fan_index]
-            min_speed = fan['min_speed']
-            max_speed = fan['max_speed']
-            read_only_val = min_speed - 1
-
-            slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
-
-            percent_value = 0
-            if slider_var and slider_var.get() == read_only_val:
-                # In Read-Only mode, calculate percentage from actual RPM
-                percent_value = max(0, min(100, int((rpm_value / max_speed) * 100))) if max_speed > 0 else 0
-            else:
-                # In Active modes, use last written speed for stability
-                last_speed = self.fan_controller.last_speed.get(fan_index, 0)
-                percent_value = max(0, min(100, int((last_speed / max_speed) * 100))) if max_speed > 0 else 0
-
-            # Schedule the UI update on the main thread
-            self.main_window.after(0, self.main_window.update_fan_readings, fan_index, rpm_value, percent_value)
-
-    def on_closing(self):
-        # Hide the window instead of closing it
+    def on_closing(self) -> None:
         self.main_window.withdraw()
 
-    def quit(self):
+    def quit(self) -> None:
         self.stop_event.set()
-        if self.update_thread and self.update_thread.is_alive():
-            self.update_thread.join(timeout=1.0)
         self.fan_controller.stop()
         self.plugin_manager.shutdown_plugins()
-        if self.system_tray.icon:
+        if isinstance(self.default_sensor, WmiTempSensor):
+            self.default_sensor.shutdown()
+
+        # Shutdown detailed logging
+        detailed_logger = get_detailed_logger()
+        if detailed_logger:
+            detailed_logger.shutdown()
+
+        self.config._flush_changes()
+        if self.system_tray and self.system_tray.icon:
             self.system_tray.icon.stop()
         self.main_window.quit()
 
-    def run(self):
+    def run(self) -> None:
         if sys.platform == 'win32':
             threading.Thread(target=self.system_tray.create_icon, daemon=True).start()
-
         if '--start-in-tray' in sys.argv and sys.platform == 'win32':
             self.main_window.withdraw()
         else:
             self.main_window.deiconify()
-
         self.main_window.mainloop()
 
-    def toggle_autostart(self):
+    def toggle_autostart(self) -> None:
         autostart = self.main_window.autostart_var.get()
         self.config.set("autostart", autostart)
-
         if sys.platform == 'win32':
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
             app_name = "VortECIO"
-
             try:
                 key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
                 if autostart:
                     executable_path = sys.executable
-                    # If running from a bundled executable, sys.executable is the path to the exe
-                    # If running from a script, we need to build the command
-                    if executable_path.endswith("python.exe") or executable_path.endswith("pythonw.exe"):
-                         script_path = os.path.abspath(__file__)
-                         value = f'"{executable_path}" "{script_path}" --start-in-tray'
-                    else: # Assuming bundled executable
+                    if executable_path.endswith(("python.exe", "pythonw.exe")):
+                        script_path = os.path.abspath(__file__)
+                        value = f'"{executable_path}" "{script_path}" --start-in-tray'
+                    else:
                         value = f'"{executable_path}" --start-in-tray'
-
                     winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, value)
                 else:
                     winreg.DeleteValue(key, app_name)
                 winreg.CloseKey(key)
             except OSError as e:
-                print(f"Failed to update registry for autostart: {e}")
+                logging.error(f"Failed to update registry for autostart: {e}")
 
 
-def unblock_file(filepath):
-    """
-    Removes the Zone.Identifier alternate data stream from a file if it exists,
-    to prevent Windows from blocking downloaded DLLs.
-    """
+from utils import normalize_fan_speed
+
+def unblock_file(filepath: str) -> None:
     if sys.platform != 'win32':
         return
     ads_path = filepath + ":Zone.Identifier"
@@ -353,14 +393,13 @@ def unblock_file(filepath):
     except OSError as e:
         logging.warning(f"Failed to unblock {os.path.basename(filepath)}: {e}")
 
-def main():
+
+def main() -> None:
     setup_logger()
     if sys.platform == 'win32':
-        # Unblock potentially blocked DLLs before they are loaded
         unblock_file('inpoutx64.dll')
         unblock_file('plugins/lhm_sensor/LibreHardwareMonitorLib.dll')
         unblock_file('plugins/lhm_sensor/HidSharp.dll')
-
         try:
             is_admin = ctypes.windll.shell32.IsUserAnAdmin()
         except AttributeError:
@@ -368,7 +407,6 @@ def main():
         if not is_admin:
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
             sys.exit(0)
-
     app = AppLogic()
     app.run()
 

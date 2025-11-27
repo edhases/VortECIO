@@ -1,9 +1,55 @@
 import customtkinter as ctk
-import tkinter as tk
-from tkinter import filedialog, messagebox
+from customtkinter import filedialog
 from logger import get_logger
 from localization import translate
 from ui.plugin_manager_window import PluginManagerWindow
+from CTkToolTip import CTkToolTip
+
+class CTkMessageBox(ctk.CTkToplevel):
+    """Custom messagebox using customtkinter"""
+    def __init__(self, title: str, message: str, icon: str = "info"):
+        super().__init__()
+        self.title(title)
+        self.geometry("400x200")
+
+        # Icon
+        icon_label = ctk.CTkLabel(self, text="⚠️" if icon == "warning" else "ℹ️",
+                                   font=ctk.CTkFont(size=48))
+        icon_label.pack(pady=20)
+
+        # Message
+        msg_label = ctk.CTkLabel(self, text=message, wraplength=350)
+        msg_label.pack(pady=10)
+
+        # OK button
+        ctk.CTkButton(self, text="OK", command=self.destroy).pack(pady=20)
+
+class StatusNotification(ctk.CTkFrame):
+    """Toast-style notification"""
+    def __init__(self, parent, message: str, duration: int = 3000):
+        super().__init__(parent, corner_radius=10)
+
+        label = ctk.CTkLabel(self, text=message)
+        label.pack(padx=20, pady=10)
+
+        # Position at bottom-right
+        self.place(relx=1.0, rely=1.0, x=-20, y=-20, anchor="se")
+
+        # Auto-hide after duration
+        self.after(duration, self.animate_hide)
+
+    def animate_hide(self):
+        # Fade out animation
+        alpha = 1.0
+        def fade():
+            nonlocal alpha
+            alpha -= 0.1
+            if alpha <= 0:
+                self.destroy()
+            else:
+                self.attributes('-alpha', alpha)
+                self.after(50, fade)
+        fade()
 
 class MainWindow(ctk.CTk):
     def __init__(self, app_logic):
@@ -11,6 +57,13 @@ class MainWindow(ctk.CTk):
         self.app_logic = app_logic
         self.logger = get_logger('MainWindow')
         self.fan_vars = {}
+        self.fan_mode_vars = {}
+        self.fan_slider_vars = {}
+        self.fan_sliders = {}
+        self.fan_speed_labels = {}
+        self.fan_rpm_labels = {}
+        self.fan_frames = {}
+        self.mode_indicators = {}
 
         # Set theme and appearance
         self._set_appearance_mode(self.app_logic.config.get("theme", "dark"))
@@ -24,115 +77,98 @@ class MainWindow(ctk.CTk):
             widget.destroy()
 
         self.fan_vars = {}
+        self.fan_mode_vars = {}
+        self.fan_slider_vars = {}
+        self.fan_sliders = {}
+        self.fan_speed_labels = {}
+        self.fan_rpm_labels = {}
+
         self.title(translate("app_title"))
-        self.geometry("550x550") # Adjusted height and width
+        self.geometry("600x400") # Adjusted height and width
 
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
 
-        self.create_widgets()
+        self.create_top_bar()
+        self.create_status_bar()
+        self.create_fan_controls()
+        self.create_bottom_bar()
 
         if self.app_logic.nbfc_parser.fans:
             self.create_fan_widgets(self.app_logic.nbfc_parser.fans)
 
-    def create_widgets(self):
-        # Top menu bar frame
-        self.menu_bar = ctk.CTkFrame(self, height=30, corner_radius=0)
-        self.menu_bar.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+    def create_top_bar(self):
+        """Minimal top bar with title and settings"""
+        top_frame = ctk.CTkFrame(self, fg_color="transparent")
+        top_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=10)
 
-        # File Menu
-        self.file_menu_var = tk.StringVar(value=translate("file_menu"))
-        self.file_menu = ctk.CTkOptionMenu(self.menu_bar, variable=self.file_menu_var,
-                                           values=[translate("load_config_menu"), translate("hide_to_tray_menu")],
-                                           command=self.file_menu_callback)
-        self.file_menu.pack(side="left", padx=(5,0))
+        # Title
+        title = ctk.CTkLabel(
+            top_frame,
+            text="VortECIO Fan Control",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        title.pack(side="left")
 
-        # Settings Menu
-        self.settings_menu_var = tk.StringVar(value=translate("settings_menu"))
-        self.settings_menu = ctk.CTkOptionMenu(self.menu_bar, variable=self.settings_menu_var,
-                                               values=[
-                                                   translate("theme_light"), translate("theme_dark"),
-                                                   "",
-                                                   translate("lang_en"), translate("lang_de"), translate("lang_pl"),
-                                                   translate("lang_uk"), translate("lang_ja")
-                                               ],
-                                               command=self.settings_menu_callback)
-        self.settings_menu.pack(side="left", padx=5)
+        # Settings button (replaces entire menu bar)
+        settings_btn = ctk.CTkButton(
+            top_frame,
+            text="⚙️ Settings",
+            width=100,
+            command=self.open_settings
+        )
+        settings_btn.pack(side="right")
 
-        # Autostart Checkbox
-        self.autostart_var = tk.BooleanVar()
-        self.autostart_var.set(self.app_logic.config.get("autostart"))
-        self.autostart_checkbox = ctk.CTkCheckBox(self.menu_bar, text=translate("autostart_windows"), variable=self.autostart_var, command=self.app_logic.toggle_autostart)
-        self.autostart_checkbox.pack(side="left", padx=5)
+    def create_status_bar(self):
+        """Compact status indicators"""
+        status_frame = ctk.CTkFrame(self, height=50)
+        status_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=5)
 
-        # Plugins Menu Button
-        self.plugins_menu_button = ctk.CTkButton(self.menu_bar, text=translate("plugins_menu"), width=70, corner_radius=0, command=self.open_plugin_manager)
-        self.plugins_menu_button.pack(side="left", padx=0)
+        # Temperature indicators
+        self.cpu_temp_label = ctk.CTkLabel(
+            status_frame,
+            text="🌡️ CPU: --°C",
+            font=ctk.CTkFont(size=14)
+        )
+        self.cpu_temp_label.pack(side="left", padx=20)
 
-        # Quit Button
-        self.quit_button = ctk.CTkButton(self.menu_bar, text=translate("quit_menu"), width=60, corner_radius=0, command=self.app_logic.quit)
-        self.quit_button.pack(side="right", padx=5)
+        self.gpu_temp_label = ctk.CTkLabel(
+            status_frame,
+            text="🎮 GPU: --°C",
+            font=ctk.CTkFont(size=14)
+        )
+        self.gpu_temp_label.pack(side="left", padx=20)
 
+        # Driver status indicator
+        self.driver_indicator = ctk.CTkLabel(
+            status_frame,
+            text="🔧 OK" if self.app_logic.driver.is_initialized else "❌ ERROR",
+            font=ctk.CTkFont(size=14),
+            text_color="green" if self.app_logic.driver.is_initialized else "red"
+        )
+        self.driver_indicator.pack(side="right", padx=20)
 
-        # Main frame
-        self.main_frame = ctk.CTkFrame(self, corner_radius=0)
-        self.main_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
-        self.main_frame.grid_columnconfigure(0, weight=1)
-
-        # Temperature display frame
-        self.temp_display_frame = ctk.CTkFrame(self.main_frame, corner_radius=5)
-        self.temp_display_frame.pack(fill='x', padx=5, pady=5)
-
-        self.cpu_temp_label = ctk.CTkLabel(self.temp_display_frame, text="CPU: N/A", font=ctk.CTkFont(size=14, weight="bold"))
-        self.cpu_temp_label.pack(side="left", padx=10, pady=5)
-
-        self.gpu_temp_label = ctk.CTkLabel(self.temp_display_frame, text="GPU: N/A", font=ctk.CTkFont(size=14, weight="bold"))
-        self.gpu_temp_label.pack(side="right", padx=10, pady=5)
-
+    def create_fan_controls(self):
         # Fan display frame - will be populated later
-        self.fan_display_frame = ctk.CTkFrame(self.main_frame, corner_radius=0, fg_color="transparent")
-        self.fan_display_frame.pack(expand=True, fill='both', pady=5)
+        self.fan_display_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.fan_display_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=10)
+        self.fan_display_frame.grid_columnconfigure(0, weight=1)
 
         self.msg_label = ctk.CTkLabel(self.fan_display_frame, text=translate("no_config_loaded_msg"))
         self.msg_label.pack(pady=20)
 
+    def create_bottom_bar(self):
         # Status bar
         self.status_bar = ctk.CTkFrame(self, height=25, corner_radius=0)
-        self.status_bar.grid(row=2, column=0, sticky="ew", padx=0, pady=0)
+        self.status_bar.grid(row=3, column=0, sticky="ew", padx=0, pady=0)
 
         self.model_label = ctk.CTkLabel(self.status_bar, text=f"{translate('model_label')}: {self.app_logic.nbfc_parser.model_name}")
         self.model_label.pack(side='left', padx=10)
 
-        driver_status = "OK" if self.app_logic.driver.is_initialized else "ERROR"
-        self.driver_label = ctk.CTkLabel(self.status_bar, text=f"{translate('driver_label')}: {driver_status}")
-        self.driver_label.pack(side='right', padx=10)
-
-    def file_menu_callback(self, choice):
-        if choice == translate("load_config_menu"):
-            self.app_logic.load_config_file()
-        elif choice == translate("hide_to_tray_menu"):
-            self.app_logic.on_closing()
-        self.file_menu_var.set(translate("file_menu"))
-
-    def settings_menu_callback(self, choice):
-        if choice == translate("theme_light"):
-            self.app_logic.apply_theme("light")
-        elif choice == translate("theme_dark"):
-            self.app_logic.apply_theme("dark")
-        elif choice == translate("lang_en"):
-            self.app_logic.set_language("en")
-        elif choice == translate("lang_de"):
-            self.app_logic.set_language("de")
-        elif choice == translate("lang_pl"):
-            self.app_logic.set_language("pl")
-        elif choice == translate("lang_uk"):
-            self.app_logic.set_language("uk")
-        elif choice == translate("lang_ja"):
-            self.app_logic.set_language("ja")
-        self.settings_menu_var.set(translate("settings_menu"))
-
-    def open_plugin_manager(self):
-        PluginManagerWindow(self, self.app_logic)
+    def open_settings(self):
+        from ui.settings_window import SettingsWindow
+        if not hasattr(self, 'settings_window') or not self.settings_window.winfo_exists():
+            self.settings_window = SettingsWindow(self, self.app_logic)
 
     def create_fan_widgets(self, fans):
         for widget in self.fan_display_frame.winfo_children():
@@ -144,86 +180,125 @@ class MainWindow(ctk.CTk):
             return
 
         for i, fan in enumerate(fans):
-            fan_frame = ctk.CTkFrame(self.fan_display_frame, corner_radius=5)
-            fan_frame.pack(fill='x', padx=5, pady=5, ipady=10)
-            fan_frame.grid_columnconfigure(1, weight=1)
+            self.create_fan_control(fan, i)
 
-            ctk.CTkLabel(fan_frame, text=fan['name'], font=ctk.CTkFont(size=16, weight="bold")).grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=(5,10))
+    def create_fan_control(self, fan_config: dict, fan_index: int):
+        """Create modern fan control widget"""
+        fan_frame = ctk.CTkFrame(self.fan_display_frame)
+        fan_frame.pack(fill="x", padx=20, pady=10)
+        self.fan_frames[fan_index] = fan_frame
 
-            # Current speed display
-            ctk.CTkLabel(fan_frame, text=translate("current_speed_rpm_label")).grid(row=1, column=0, sticky="w", padx=10)
-            percent_var = tk.StringVar(value="N/A")
-            self.fan_vars[f'fan_{i}_percent'] = percent_var
-            ctk.CTkLabel(fan_frame, textvariable=percent_var).grid(row=1, column=1, sticky="w", padx=5)
+        # Header with name and mode selector
+        header_frame = ctk.CTkFrame(fan_frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=10, pady=5)
 
-            # Manual control slider
-            min_val, max_val = fan['min_speed'], fan['max_speed']
-            disabled_val = min_val - 2
-            read_only_val = min_val - 1
-            auto_val = max_val + 1
+        mode_indicator = ctk.CTkLabel(header_frame, text="🤖", font=ctk.CTkFont(size=20))
+        mode_indicator.pack(side="left", padx=(0, 5))
+        self.mode_indicators[fan_index] = mode_indicator
 
-            slider_var = tk.IntVar(value=auto_val)
-            self.fan_vars[f'fan_{i}_write'] = slider_var
+        fan_name = ctk.CTkLabel(
+            header_frame,
+            text=f"{fan_config['name']}",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        fan_name.pack(side="left")
 
-            slider = ctk.CTkSlider(fan_frame, from_=disabled_val, to=auto_val, variable=slider_var,
-                                   command=lambda v, idx=i: self.update_slider_label(v, idx))
-            slider.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
-            self.fan_vars[f'fan_{i}_slider'] = slider
+        # Mode selector (dropdown) ✅
+        mode_var = ctk.StringVar(value="Auto")
+        self.fan_mode_vars[fan_index] = mode_var
 
-            slider_label_var = tk.StringVar(value="Auto")
-            self.fan_vars[f'fan_{i}_slider_label'] = slider_label_var
-            ctk.CTkLabel(fan_frame, textvariable=slider_label_var, width=40).grid(row=2, column=2, padx=5)
+        mode_selector = ctk.CTkOptionMenu(
+            header_frame,
+            variable=mode_var,
+            values=["Auto", "Manual", "Read-only", "Disabled"],
+            width=120,
+            command=lambda choice, idx=fan_index: self.on_mode_change(idx, choice)
+        )
+        mode_selector.pack(side="right")
 
-            apply_button = ctk.CTkButton(fan_frame, text=translate("apply_button"),
-                                         command=lambda idx=i: self.app_logic.set_fan_speed(idx))
-            apply_button.grid(row=3, column=2, sticky="e", padx=10, pady=(0, 10))
-            self.fan_vars[f'fan_{i}_apply_button'] = apply_button
+        # Slider (only for Manual mode) ✅
+        slider_frame = ctk.CTkFrame(fan_frame, fg_color="transparent")
+        slider_frame.pack(fill="x", padx=10, pady=5)
 
-    def update_slider_label(self, value, fan_index):
-        val = int(float(value))
+        slider_var = ctk.IntVar(value=50)
+        self.fan_slider_vars[fan_index] = slider_var
 
-        first_fan = self.app_logic.nbfc_parser.fans[0]
-        min_val = first_fan['min_speed']
-        max_val = first_fan['max_speed']
-        disabled_val = min_val - 2
-        read_only_val = min_val - 1
-        auto_val = max_val + 1
+        slider = ctk.CTkSlider(
+            slider_frame,
+            from_=0, to=100,  # Normal 0-100%, no magic values! ✅
+            variable=slider_var,
+            command=lambda v, idx=fan_index: self.on_slider_change(idx, v)
+        )
+        slider.pack(side="left", fill="x", expand=True, padx=5)
+        self.fan_sliders[fan_index] = slider
 
-        is_special_mode = val in [disabled_val, read_only_val, auto_val]
+        # Initially disable slider (Auto mode)
+        slider.configure(state="disabled")
 
-        for i, fan in enumerate(self.app_logic.nbfc_parser.fans):
-            slider_var = self.fan_vars.get(f'fan_{i}_write')
-            label_var = self.fan_vars.get(f'fan_{i}_slider_label')
+        CTkToolTip(mode_selector, message="Auto: Control based on temperature curve\nManual: Set fixed speed\nRead-only: Monitor only\nDisabled: Use BIOS control")
+        CTkToolTip(slider, message="Drag to adjust fan speed (0-100%)")
 
-            if not slider_var or not label_var:
-                continue
+        # Value labels
+        speed_label = ctk.CTkLabel(slider_frame, text="50%", width=50)
+        speed_label.pack(side="left", padx=5)
+        self.fan_speed_labels[fan_index] = speed_label
 
-            current_slider_val = slider_var.get()
+        rpm_label = ctk.CTkLabel(slider_frame, text="-- RPM", width=80)
+        rpm_label.pack(side="left", padx=5)
+        self.fan_rpm_labels[fan_index] = rpm_label
 
-            if i != fan_index and is_special_mode and current_slider_val != val:
-                slider_var.set(val)
+    def on_mode_change(self, fan_index: int, mode: str):
+        """Handle mode change"""
+        slider = self.fan_sliders[fan_index]
 
-            current_val_for_label = slider_var.get()
-            if current_val_for_label == auto_val:
-                label_var.set(translate("slider_auto"))
-            elif current_val_for_label == read_only_val:
-                label_var.set(translate("slider_read"))
-            elif current_val_for_label == disabled_val:
-                label_var.set(translate("slider_off"))
-            else:
-                label_var.set(f"{current_val_for_label}%")
+        if mode == "Manual":
+            slider.configure(state="normal")  # Enable slider
+        else:
+            slider.configure(state="disabled")  # Disable slider
+
+        # Apply mode to backend
+        self.app_logic.set_fan_mode(fan_index, mode)
+        self.update_fan_display(fan_index, mode)
+
+    def update_fan_display(self, fan_index: int, mode: str):
+        """Update visual appearance based on mode"""
+        frame = self.fan_frames[fan_index]
+
+        # Color coding
+        colors = {
+            'Auto': ('green', '🤖'),
+            'Manual': ('blue', '👤'),
+            'Read-only': ('gray', '👁️'),
+            'Disabled': ('red', '⏸️')
+        }
+
+        color, icon = colors[mode]
+        frame.configure(border_color=color, border_width=2)
+
+        # Update mode indicator
+        self.mode_indicators[fan_index].configure(text=icon)
+
+    def on_slider_change(self, fan_index: int, value: float):
+        """Handle slider change in real-time"""
+        mode = self.fan_mode_vars[fan_index].get()
+
+        if mode == "Manual":
+            # Apply immediately with debounce
+            if hasattr(self, f'_slider_timer_{fan_index}'):
+                self.after_cancel(getattr(self, f'_slider_timer_{fan_index}'))
+
+            # Debounce: apply after 200ms of no changes
+            timer = self.after(200, lambda: self.app_logic.set_manual_fan_speed(fan_index, int(value)))
+            setattr(self, f'_slider_timer_{fan_index}', timer)
+
+        self.fan_speed_labels[fan_index].configure(text=f"{int(value)}%")
+
 
     def update_fan_readings(self, fan_index, rpm_value, percent_value):
-        if f'fan_{fan_index}_percent' in self.fan_vars:
-            slider_var = self.fan_vars.get(f'fan_{fan_index}_write')
-            min_val = self.app_logic.nbfc_parser.fans[fan_index]['min_speed']
-            disabled_val = min_val - 2
-
-            if slider_var and slider_var.get() == disabled_val:
-                display_value = "Off"
-            else:
-                display_value = f"{percent_value}%"
-            self.fan_vars[f'fan_{fan_index}_percent'].set(display_value)
+        if fan_index in self.fan_rpm_labels:
+            self.fan_rpm_labels[fan_index].configure(text=f"{rpm_value} RPM")
+        if fan_index in self.fan_speed_labels and self.fan_mode_vars[fan_index].get() != "Manual":
+            self.fan_speed_labels[fan_index].configure(text=f"{percent_value}%")
 
     def update_temp_readings(self, cpu_temp, gpu_temp):
         cpu_text = f"CPU: {int(cpu_temp)}°C" if cpu_temp is not None else "CPU: N/A"
@@ -232,7 +307,7 @@ class MainWindow(ctk.CTk):
         self.gpu_temp_label.configure(text=gpu_text)
 
     def show_error(self, title, message):
-        messagebox.showerror(title, message)
+        CTkMessageBox(title, message, icon="warning")
 
     def get_selected_filepath(self):
         return filedialog.askopenfilename(
