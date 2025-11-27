@@ -6,7 +6,6 @@ from logger import setup_logger, get_logger
 import time
 import sys
 import threading
-from tkinter import messagebox
 from typing import List, Dict, Any, Optional, Tuple
 
 from hardware import EcDriver
@@ -218,10 +217,6 @@ class AppLogic:
         self.main_window.recreate_ui()
 
     def _load_config(self, filepath: str) -> None:
-        if self.update_thread and self.update_thread.is_alive():
-            self.stop_event.set()
-            self.update_thread.join(timeout=1.0)
-
         parser = NbfcConfigParser(filepath)
         if parser.parse():
             for fan in parser.fans:
@@ -260,18 +255,6 @@ class AppLogic:
         if filepath:
             self._load_config(filepath)
 
-    def set_fan_speed(self, fan_index: int) -> None:
-        slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
-        if not slider_var:
-            return
-        fan = self.nbfc_parser.fans[fan_index]
-        min_val, max_val = fan['min_speed'], fan['max_speed']
-        disabled_val, read_only_val = min_val - 2, min_val - 1
-        auto_val = max_val + 1
-        if slider_var.get() in (auto_val, read_only_val, disabled_val):
-            return
-        self.set_manual_fan_speed(fan_index, slider_var.get())
-
     def set_manual_fan_speed(self, fan_index: int, speed_percent: int) -> None:
         """
         Set fan to manual speed (percentage 0-100).
@@ -291,16 +274,26 @@ class AppLogic:
         Args:
             mode: 'Auto', 'Manual', 'Read-only', 'Disabled'
         """
+        if not (0 <= fan_index < len(self.nbfc_parser.fans)):
+            return
         fan = self.nbfc_parser.fans[fan_index]
 
         mode_mapping = {
             'Auto': fan['max_speed'] + 1,
-            'Manual': -1,  # Special flag, use current slider value
+            'Manual': -1,  # Special: will use slider value
             'Read-only': fan['min_speed'] - 1,
             'Disabled': fan['min_speed'] - 2
         }
 
-        self.fan_controller.set_fan_mode_cached(fan_index, mode_mapping[mode])
+        internal_value = mode_mapping[mode]
+
+        # For Manual mode, read from slider
+        if mode == 'Manual':
+            slider_var = self.main_window.fan_slider_vars.get(fan_index)
+            if slider_var:
+                internal_value = slider_var.get()
+
+        self.fan_controller.set_fan_mode_cached(fan_index, internal_value)
 
         if mode == 'Disabled':
             # Write reset value immediately
@@ -309,19 +302,22 @@ class AppLogic:
     def set_fan_speed_internal(self, fan_index: int, speed: int, force_write: bool = False) -> None:
         if self.fan_control_disabled:
             return
+
         if not force_write:
-            slider_var = self.main_window.fan_vars.get(f'fan_{fan_index}_write')
-            if not slider_var:
-                return
-            fan = self.nbfc_parser.fans[fan_index]
-            min_val = fan['min_speed']
-            disabled_val, read_only_val = min_val - 2, min_val - 1
-            if slider_var.get() in (read_only_val, disabled_val):
-                return
+            # Check mode from new UI structure
+            mode_var = self.main_window.fan_mode_vars.get(fan_index)
+            if mode_var:
+                mode = mode_var.get()
+                # Don't write if in read-only or disabled mode
+                if mode in ('Read-only', 'Disabled'):
+                    return
+
         threading.Thread(target=self._set_fan_speed_thread, args=(fan_index, speed)).start()
 
     def _set_fan_speed_thread(self, fan_index: int, speed: int) -> None:
         if self.fan_control_disabled:
+            return
+        if not (0 <= fan_index < len(self.nbfc_parser.fans)):
             return
         fan = self.nbfc_parser.fans[fan_index]
         write_reg = fan['write_reg']
