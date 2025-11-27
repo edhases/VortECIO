@@ -1,0 +1,16 @@
+{
+    "app_title": "VortECIO ファンコントロール",
+    "load_config_menu": "NBFC設定を読み込む",
+    "model_label": "モデル",
+    "no_config_loaded_msg": "[設定]メニューからNBFC設定ファイルを読み込みます。",
+    "no_fans_found_msg": "このファイルにはファン構成が見つかりませんでした。",
+    "manage_plugins_title": "プラグインの管理",
+    "select_active_plugins_label": "アクティブなプラグインを選択:",
+    "restart_required_title": "再起動が必要です",
+    "restart_required_msg": "変更はアプリケーションを再起動した後に有効になります。",
+    "plugin_manager_title": "プラグインの管理",
+    "select_active_plugins": "アクティブなプラグインを選択:",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "plugins_restart_warning": "⚠️ 変更は再起動後に有効になります"
+}

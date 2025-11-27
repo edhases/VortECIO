@@ -339,6 +339,13 @@ class MainWindow(ctk.CTk):
         self.cpu_temp_label.configure(text=cpu_text)
         self.gpu_temp_label.configure(text=gpu_text)
 
+    def clear_fan_display(self, fan_index: int):
+        """Clear speed and RPM for a specific fan."""
+        if fan_index in self.fan_speed_labels:
+            self.fan_speed_labels[fan_index].configure(text="--")
+        if fan_index in self.fan_rpm_labels:
+            self.fan_rpm_labels[fan_index].configure(text="-- RPM")
+
     def show_error(self, title, message):
         CTkMessageBox(title, message, icon="warning")
 

@@ -110,15 +110,11 @@ class SettingsWindow(ctk.CTkToplevel):
 
         lang_var = ctk.StringVar(value=self.app_logic.config.get("language", "en"))
 
-        languages = [
-            ("🇬🇧 English", "en"),
-            ("🇺🇦 Українська", "uk"),
-            ("🇩🇪 Deutsch", "de"),
-            ("🇵🇱 Polski", "pl"),
-            ("🇯🇵 日本語", "ja")
-        ]
+        # Dynamically load languages
+        from localization import get_available_languages
+        languages = get_available_languages()
 
-        for label, code in languages:
+        for code, label in languages.items():
             ctk.CTkRadioButton(
                 lang_frame, text=label, variable=lang_var, value=code,
                 command=lambda c=code: self.app_logic.set_language(c)

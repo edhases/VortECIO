@@ -9,7 +9,7 @@ class AppConfig:
         self.file_name = file_name
         self.defaults = {
             "last_config_path": None,
-            "theme": "light",
+            "theme": "system",
             "language": "en",
             "autostart": False,
             "active_plugins": ["lhm_sensor"],
