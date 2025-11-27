@@ -149,6 +149,13 @@ class SettingsWindow(ctk.CTkToplevel):
             font=ctk.CTkFont(size=10)
         ).pack(anchor="w", padx=20)
 
+        # Open log folder button
+        ctk.CTkButton(
+            logging_frame,
+            text="📂 Open Log Folder",
+            command=self.open_log_folder
+        ).pack(fill="x", pady=5)
+
         # Plugins
         plugin_frame = ctk.CTkFrame(parent)
         plugin_frame.pack(fill="x", padx=10, pady=10)
@@ -161,6 +168,21 @@ class SettingsWindow(ctk.CTkToplevel):
             text="🔌 Manage Plugins",
             command=self.open_plugin_manager
         ).pack(fill="x", pady=5)
+
+    def open_log_folder(self):
+        """Open logs folder in file explorer"""
+        import subprocess
+        import sys
+
+        log_dir = os.path.abspath('logs')
+        os.makedirs(log_dir, exist_ok=True)
+
+        if sys.platform == 'win32':
+            os.startfile(log_dir)
+        elif sys.platform == 'darwin':
+            subprocess.Popen(['open', log_dir])
+        else:
+            subprocess.Popen(['xdg-open', log_dir])
 
     def on_detailed_logging_change(self, enabled: bool):
         """Handle detailed logging toggle"""

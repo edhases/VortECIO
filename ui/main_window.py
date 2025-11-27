@@ -66,13 +66,20 @@ class MainWindow(ctk.CTk):
         self.mode_indicators = {}
 
         # Set theme and appearance
-        self._set_appearance_mode(self.app_logic.config.get("theme", "dark"))
+        ctk.set_appearance_mode(self.app_logic.config.get("theme", "dark"))
 
         self.recreate_ui()
         self.protocol("WM_DELETE_WINDOW", self.app_logic.on_closing)
         self.logger.info("MainWindow initialized")
 
     def recreate_ui(self):
+        # Cancel all debounce timers
+        for attr in dir(self):
+            if attr.startswith('_slider_timer_'):
+                timer_id = getattr(self, attr)
+                if timer_id:
+                    self.after_cancel(timer_id)
+
         for widget in self.winfo_children():
             widget.destroy()
 
