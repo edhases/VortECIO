@@ -14,7 +14,10 @@ class AppConfig:
             "autostart": False,
             "active_plugins": ["lhm_sensor"],
             "detailed_logging": False,
-            "log_level": "INFO"
+            "log_level": "INFO",
+            "critical_temp_action": "ask",  # "ask", "disable", "continue", "ignore"
+            "show_critical_warning": True,
+            "prefer_lhm": True
         }
         self.config = self.defaults.copy()
         self._pending_changes = {}

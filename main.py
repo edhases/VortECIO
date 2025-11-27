@@ -64,10 +64,13 @@ class NbfcConfigParser:
             if read_write_words_node is not None and read_write_words_node.text:
                 self.read_write_words = read_write_words_node.text.lower() == 'true'
 
-            critical_temp_node = root.find('CriticalTemperature')
-            if critical_temp_node is not None and critical_temp_node.text:
-                self.critical_temperature = float(critical_temp_node.text)
-                logging.info(f"Critical temperature: {self.critical_temperature}°C")
+            # Validate critical temperature (0-150°C reasonable range)
+            critical_temp_node = root.find('.//CriticalTemperature')
+            if critical_temp_node is not None:
+                critical_temp = float(critical_temp_node.text)
+                if not (0 <= critical_temp <= 150):
+                    raise ValueError(f"Invalid critical_temperature: {critical_temp}. Must be 0-150°C.")
+                self.critical_temperature = critical_temp
 
             ec_io_ports = root.find('EcIoPorts')
             if ec_io_ports is not None:
@@ -233,22 +236,50 @@ class AppLogic:
         self.fan_controller.start()
 
     def get_active_sensor(self) -> Any:
-        return self.plugin_sensor if self.plugin_sensor else self.default_sensor
+        """Get active temperature sensor (prefer LHM over WMI)."""
+        # Try LHM first if available and preferred
+        if self.plugin_sensor and self.config.get("prefer_lhm", True):
+            return self.plugin_sensor
+        # Fallback to WMI
+        return self.default_sensor
 
     def register_sensor(self, sensor_instance: Any) -> None:
         logging.info(f"New sensor registered: {sensor_instance}")
         self.plugin_sensor = sensor_instance
 
-    def apply_theme(self, theme_name: str) -> None:
-        self.config.set("theme", theme_name)
-        valid_themes = ["light", "dark", "system"]
-        if theme_name in valid_themes:
-            ctk.set_appearance_mode(theme_name)
+    def apply_theme(self, theme: str):
+        self.config.set('theme', theme)
+        ctk.set_appearance_mode(theme)
 
-    def set_language(self, lang_code: str) -> None:
-        self.config.set("language", lang_code)
-        localization.set_language(lang_code)
-        self.main_window.recreate_ui()
+        # Close Settings window (CTkToplevel has theme change bugs)
+        if hasattr(self.main_window, 'settings_window'):
+            try:
+                if self.main_window.settings_window.winfo_exists():
+                    self.main_window.settings_window.destroy()
+                    # Show notification
+                    from ui.main_window import StatusNotification
+                    StatusNotification(
+                        self.main_window,
+                        f"Theme changed. Reopen Settings if needed.",
+                        duration=3000
+                    )
+            except:
+                pass
+
+    def set_language(self, lang_code: str):
+        self.config.set('language', lang_code)
+
+        # Recreate entire UI to apply new language strings
+        if hasattr(self, 'main_window') and self.main_window.winfo_exists():
+            self.main_window.recreate_ui()
+
+        # Close outdated settings window
+        if hasattr(self.main_window, 'settings_window'):
+            try:
+                if self.main_window.settings_window.winfo_exists():
+                    self.main_window.settings_window.destroy()
+            except:
+                pass
 
     def _load_config(self, filepath: str) -> None:
         parser = NbfcConfigParser(filepath)
@@ -415,10 +446,10 @@ from utils import normalize_fan_speed
 import hashlib
 from tkinter import messagebox
 
-# Known-good hashes (generate these from official DLLs)
+# TODO: Generate hashes using generate_hashes.py script
 KNOWN_HASHES = {
-    'inpoutx64.dll': 'a1b2c3d4e5f6...actual_sha256_hash_here',
-    'LibreHardwareMonitorLib.dll': 'f1e2d3c4b5a6...actual_sha256_hash_here'
+    'inpoutx64.dll': None,  # User must fill this
+    'LibreHardwareMonitorLib.dll': None,
 }
 
 def unblock_file(filepath: str) -> None:
@@ -435,11 +466,25 @@ def unblock_file(filepath: str) -> None:
 def verify_and_unblock(filepath: str) -> bool:
     """
     Verify DLL integrity and remove MOTW if valid.
-    Returns True if file is safe, False otherwise.
+    NOTE: Hash verification disabled pending manual hash generation.
     """
+    filename = os.path.basename(filepath)
     logger = get_logger(__name__)
-    logger.warning(f"Hash verification not implemented yet for {filepath}")
-    unblock_file(filepath)  # Proceed with unblock
+
+    if filename in KNOWN_HASHES and KNOWN_HASHES[filename] is not None:
+        # Hash verification enabled
+        with open(filepath, 'rb') as f:
+            file_hash = hashlib.sha256(f.read()).hexdigest()
+
+        if file_hash != KNOWN_HASHES[filename]:
+            logger.error(f"❌ Hash mismatch for {filename}! Possible tampering.")
+            return False
+    else:
+        # Hash not set - log warning but proceed
+        logger.warning(f"⚠️ Hash verification not configured for {filename}")
+
+    # Unblock file
+    unblock_file(filepath)
     return True
 
 

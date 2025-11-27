@@ -21,6 +21,8 @@ class FanController:
         self._fan_mode_cache: Dict[int, int] = {}
         self._cache_lock: threading.Lock = threading.Lock()
         self._cache_updated: threading.Event = threading.Event()
+        self.last_cpu_temp = None
+        self.last_gpu_temp = None
 
     def start(self) -> None:
         if self.control_thread and self.control_thread.is_alive():
@@ -34,23 +36,49 @@ class FanController:
         if self.control_thread and self.control_thread.is_alive():
             self.control_thread.join(timeout=1.0)
 
-    def trigger_panic_mode(self) -> None:
+    def trigger_panic_mode(self):
+        """Handle critical temperature - simplified approach."""
         if self.app_logic.fan_control_disabled:
             return
 
-        self.app_logic.fan_control_disabled = True
-        self.sensor_errors = 0
+        action = self.app_logic.config.get("critical_temp_action", "ask")
 
-        # Use modern CTkMessageBox
-        def show_error():
+        if action == "ask":
+            # Show informational dialog (first time)
+            self.show_critical_info_dialog()
+            # Set to 'disable' so we don't spam dialogs
+            self.app_logic.config.set("critical_temp_action", "disable")
+            self.app_logic.fan_control_disabled = True
+        elif action == "disable":
+            # Disable silently
+            self.app_logic.fan_control_disabled = True
+        elif action == "continue":
+            # Log warning but continue
+            self.logger.warning(f"Critical temp {self.last_cpu_temp}°C - continuing per user config")
+        # "ignore" - do nothing
+
+    def show_critical_info_dialog(self):
+        """Show informational dialog about panic mode."""
+        def show():
             from ui.main_window import CTkMessageBox
+
+            current_temp = getattr(self, 'last_cpu_temp', 0) or getattr(self, 'last_gpu_temp', 0) or 0
+
             CTkMessageBox(
-                title="Sensor Error",
-                message="Thermal sensor failure. Fan control disabled for safety.",
+                title="⚠️ Critical Temperature",
+                message=(
+                    f"Critical temperature detected: {current_temp:.1f}°C\n"
+                    f"Threshold: {self.critical_temperature:.1f}°C\n\n"
+                    f"Fan control has been DISABLED for safety.\n"
+                    f"BIOS will now manage your fans.\n\n"
+                    f"You can change this behavior in:\n"
+                    f"Settings → Advanced → Critical Temperature Behavior\n\n"
+                    f"Restart the app after temperatures normalize."
+                ),
                 icon="warning"
             )
 
-        self.app_logic.main_window.after(0, show_error)
+        self.app_logic.main_window.after(0, show)
 
     def _update_fan_mode_cache(self) -> None:
         with self._cache_lock:
@@ -122,6 +150,8 @@ class FanController:
                 sensor = self.app_logic.get_active_sensor()
                 if sensor:
                     cpu_temp, gpu_temp = sensor.get_temperatures()
+                    self.last_cpu_temp = cpu_temp
+                    self.last_gpu_temp = gpu_temp
                     self.app_logic.main_window.after(0, self.app_logic.main_window.update_temp_readings, cpu_temp, gpu_temp)
                     temps = [t for t in (cpu_temp, gpu_temp) if t is not None]
                     if temps:
