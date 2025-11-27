@@ -1,14 +1,30 @@
 import ctypes
 import time
 import os
+import sys
 import threading
 from typing import Optional
+from logger import get_logger
 from advanced_logging import get_detailed_logger
 
 class EcDriver:
     def __init__(self, dll_name: str = 'inpoutx64.dll', ec_data_port: int = 0x62, ec_command_port: int = 0x66) -> None:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        self.dll_path: str = os.path.join(base_path, dll_name)
+        self.logger = get_logger(__name__)
+        # Determine base path (works for both script and compiled EXE)
+        if getattr(sys, 'frozen', False):
+            # Running as compiled EXE (PyInstaller)
+            base_path = sys._MEIPASS  # PyInstaller temp folder
+        else:
+            # Running as Python script
+            base_path = os.path.dirname(os.path.abspath(__file__))
+
+        self.dll_path = os.path.join(base_path, dll_name)
+
+        # Verify DLL exists before loading
+        if not os.path.exists(self.dll_path):
+            raise FileNotFoundError(f"Driver DLL not found: {self.dll_path}")
+
+        self.logger.info(f"Loading driver from: {self.dll_path}")
         self.inpout: Optional[ctypes.WinDLL] = None
         self.is_initialized: bool = False
         self.lock: threading.Lock = threading.Lock()
@@ -42,6 +58,7 @@ class EcDriver:
         while (time.perf_counter() - start) < timeout:
             if not (self.inpout.Inp32(self.EC_SC) & self.EC_IBF):
                 return True
+            time.sleep(0.0001)  # 100 microseconds - imperceptible latency, massive CPU savings
         return False
 
     def _wait_obf(self) -> bool:
@@ -51,6 +68,7 @@ class EcDriver:
         while (time.perf_counter() - start) < timeout:
             if self.inpout.Inp32(self.EC_SC) & self.EC_OBF:
                 return True
+            time.sleep(0.0001)  # 100 microseconds - imperceptible latency, massive CPU savings
         return False
 
     def read_register(self, reg: int) -> Optional[int]:

@@ -149,6 +149,13 @@ class SettingsWindow(ctk.CTkToplevel):
             font=ctk.CTkFont(size=10)
         ).pack(anchor="w", padx=20)
 
+        # Open log folder button
+        ctk.CTkButton(
+            logging_frame,
+            text="📂 Open Log Folder",
+            command=self.open_log_folder
+        ).pack(fill="x", pady=5)
+
         # Plugins
         plugin_frame = ctk.CTkFrame(parent)
         plugin_frame.pack(fill="x", padx=10, pady=10)
@@ -161,6 +168,65 @@ class SettingsWindow(ctk.CTkToplevel):
             text="🔌 Manage Plugins",
             command=self.open_plugin_manager
         ).pack(fill="x", pady=5)
+
+        # Critical Temperature Handling
+        critical_frame = ctk.CTkFrame(parent)
+        critical_frame.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(critical_frame, text="Critical Temperature Behavior",
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=5)
+
+        # Show current threshold from config
+        threshold = getattr(self.app_logic.fan_controller, 'critical_temperature', 95.0)
+        ctk.CTkLabel(critical_frame,
+                     text=f"Current threshold: {threshold}°C (from NBFC config)",
+                     text_color="gray",
+                     font=ctk.CTkFont(size=10)).pack(anchor="w")
+
+        action_var = ctk.StringVar(value=self.app_logic.config.get("critical_temp_action", "ask"))
+
+        ctk.CTkRadioButton(critical_frame, text="❓ Ask me each time",
+                           variable=action_var, value="ask",
+                           command=lambda: self.app_logic.config.set("critical_temp_action", "ask")).pack(anchor="w", pady=2)
+
+        ctk.CTkRadioButton(critical_frame, text="🛑 Always disable control (safest)",
+                           variable=action_var, value="disable",
+                           command=lambda: self.app_logic.config.set("critical_temp_action", "disable")).pack(anchor="w", pady=2)
+
+        ctk.CTkRadioButton(critical_frame, text="▶️ Always continue (I know my config is safe)",
+                           variable=action_var, value="continue",
+                           command=lambda: self.app_logic.config.set("critical_temp_action", "continue")).pack(anchor="w", pady=2)
+
+        ctk.CTkRadioButton(critical_frame, text="🔕 Ignore all warnings",
+                           variable=action_var, value="ignore",
+                           command=lambda: self.app_logic.config.set("critical_temp_action", "ignore")).pack(anchor="w", pady=2)
+
+        ctk.CTkLabel(critical_frame,
+                     text="⚠️ Note: Threshold is set in your NBFC XML config, not here.",
+                     text_color="orange",
+                     font=ctk.CTkFont(size=9)).pack(anchor="w", pady=5)
+
+    def open_log_folder(self):
+        """Open logs folder in file explorer"""
+        import subprocess
+        import sys
+
+        log_dir = os.path.abspath('logs')
+        os.makedirs(log_dir, exist_ok=True)
+
+        try:
+            if sys.platform == 'win32':
+                os.startfile(log_dir)
+            elif sys.platform == 'darwin':  # macOS
+                subprocess.Popen(['open', log_dir])
+            else:  # Linux
+                subprocess.Popen(['xdg-open', log_dir])
+        except Exception as e:
+            CTkMessageBox(
+                title="Error",
+                message=f"Could not open log folder:\n{str(e)}",
+                icon="warning"
+            )
 
     def on_detailed_logging_change(self, enabled: bool):
         """Handle detailed logging toggle"""
