@@ -229,36 +229,19 @@ class FanController:
         return normalize_fan_speed(rpm, fan_config)
 
     def _get_speed_for_temp(self, fan_index: int, fan_config: Dict[str, Any], temp: Optional[float]) -> int:
-        """
-        Determine fan speed based on temperature with hysteresis.
-        Uses binary search for O(log n) performance.
-        Args:
-            fan_index: Index of the fan
-            fan_config: Fan configuration dict with 'temp_thresholds' key
-            temp: Current temperature in Celsius
-
-        Returns:
-            Target fan speed (percentage, 0-100)
-        """
         last_speed = self.last_speed.get(fan_index, 0)
         thresholds = fan_config.get('temp_thresholds', [])
 
         if not thresholds or temp is None:
             return last_speed
 
-        # Thresholds are already sorted in main.py
-        # Format: [(up_temp, down_temp, speed), ...]
-
-        # Binary search for the appropriate threshold
+        # Binary search for target zone
         up_temps = [t[0] for t in thresholds]
         idx = bisect.bisect_right(up_temps, temp)
 
-        # Determine target speed zone
         if idx == 0:
-            # Below all thresholds
             target_speed = 0
         else:
-            # At or above threshold idx-1
             target_speed = thresholds[idx - 1][2]
 
         # Apply hysteresis
@@ -269,36 +252,32 @@ class FanController:
             new_speed = target_speed
         elif target_speed < last_speed:
             # Temperature falling: check down threshold
-            # Find current speed zone
             current_zone_idx = None
+
+            # Try to find zone matching last_speed
             for i, (up, down, speed) in enumerate(thresholds):
                 if speed == last_speed:
                     current_zone_idx = i
                     break
 
             if current_zone_idx is not None:
+                # Normal case: last_speed matches a threshold
                 down_threshold = thresholds[current_zone_idx][1]
                 if temp <= down_threshold:
-                    # Below down threshold: allow speed decrease
                     new_speed = target_speed
-                # else: stay in hysteresis zone (new_speed = last_speed)
-
-        detailed_logger = get_detailed_logger()
-        if detailed_logger:
-            reason = 'unchanged'
-            if new_speed > last_speed:
-                reason = 'temp_rising'
-            elif new_speed < last_speed:
-                reason = 'temp_falling'
-
-            detailed_logger.log_hysteresis_decision(
-                fan_index=fan_index,
-                temp=temp,
-                last_speed=last_speed,
-                target_speed=target_speed,
-                new_speed=new_speed,
-                reason=reason
-            )
+            else:
+                # FALLBACK: last_speed is non-standard (manual override)
+                # Use target zone's down threshold for hysteresis
+                if idx > 0:
+                    # We're in a defined zone - use its down threshold
+                    fallback_down = thresholds[idx - 1][1]
+                    if temp <= fallback_down:
+                        new_speed = target_speed
+                        self.logger.debug(f"Fan {fan_index}: Non-standard speed {last_speed}%, "
+                                         f"using fallback hysteresis (down={fallback_down}°C)")
+                else:
+                    # Below all thresholds - drop to minimum immediately
+                    new_speed = target_speed
 
         self.last_speed[fan_index] = new_speed
         return new_speed
