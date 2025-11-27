@@ -462,6 +462,30 @@ KNOWN_HASHES = {
 }
 
 
+def verify_and_unblock(filepath: str) -> bool:
+    """
+    Verify DLL integrity and remove MOTW if valid.
+    NOTE: Hash verification disabled pending manual hash generation.
+    """
+    filename = os.path.basename(filepath)
+    logger = get_logger(__name__)
+
+    if filename in KNOWN_HASHES and KNOWN_HASHES[filename] is not None:
+        # Hash verification enabled
+        with open(filepath, 'rb') as f:
+            file_hash = hashlib.sha256(f.read()).hexdigest()
+
+        if file_hash != KNOWN_HASHES[filename]:
+            logger.error(f"❌ Hash mismatch for {filename}! Possible tampering.")
+            return False
+    else:
+        # Hash not set - log warning but proceed
+        logger.warning(f"⚠️ Hash verification not configured for {filename}")
+
+    # Unblock file
+    unblock_file(filepath)
+    return True
+
 
 def main() -> None:
     setup_logger()
