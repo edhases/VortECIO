@@ -58,6 +58,7 @@ The application allows users to take full control of fan speeds, achieving the p
 ### ✨ Key Features & Advantages
 
 * **NBFC Compatibility:** Full support for NoteBook FanControl `.xml` configuration files. You can use existing profiles created for hundreds of laptop models.
+  - **Extended XML Support:** VortECIO now supports additional NBFC tags like `<CriticalTemperature>` for model-specific thermal shutdown and `<EcIoPorts>` for laptops with non-standard Embedded Controller addresses.
 * **Precise Monitoring (LHM):** Integration with **LibreHardwareMonitor** ensures instant and accurate reading of CPU (including per-core) and GPU temperatures, offering significantly higher reliability than standard WMI methods.
 * **Flexible Control Modes:**
     * **Automatic:** Smooth fan speed adjustment based on the temperature curve defined in the configuration.
