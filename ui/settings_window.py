@@ -177,12 +177,19 @@ class SettingsWindow(ctk.CTkToplevel):
         log_dir = os.path.abspath('logs')
         os.makedirs(log_dir, exist_ok=True)
 
-        if sys.platform == 'win32':
-            os.startfile(log_dir)
-        elif sys.platform == 'darwin':
-            subprocess.Popen(['open', log_dir])
-        else:
-            subprocess.Popen(['xdg-open', log_dir])
+        try:
+            if sys.platform == 'win32':
+                os.startfile(log_dir)
+            elif sys.platform == 'darwin':  # macOS
+                subprocess.Popen(['open', log_dir])
+            else:  # Linux
+                subprocess.Popen(['xdg-open', log_dir])
+        except Exception as e:
+            CTkMessageBox(
+                title="Error",
+                message=f"Could not open log folder:\n{str(e)}",
+                icon="warning"
+            )
 
     def on_detailed_logging_change(self, enabled: bool):
         """Handle detailed logging toggle"""

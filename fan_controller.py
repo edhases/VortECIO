@@ -162,13 +162,14 @@ class FanController:
                         self.fan_states[i] = 'active'
                         speed_to_write = 0
                         if fan_mode == auto_val:
-                            hysteresis_start = time.perf_counter()
+                            # Auto mode: calculate from temperature
                             speed_percent = self._get_speed_for_temp(i, fan, current_temp) if current_temp is not None else self.last_speed.get(i, 0)
-                            hysteresis_time = time.perf_counter() - hysteresis_start
-                            if hysteresis_time > 0.001:
-                                logger.debug(f"Hysteresis calculation took {hysteresis_time*1000:.2f}ms for fan {i}")
                             speed_to_write = denormalize_fan_speed(speed_percent, fan)
+                        elif fan_mode == read_only_val or fan_mode == disabled_val:
+                            # These modes are handled by the is_active_control check, but we continue defensively.
+                            continue
                         else:
+                            # Manual mode: Assume it's a percentage from the new UI
                             speed_to_write = denormalize_fan_speed(fan_mode, fan)
                         self.app_logic.set_fan_speed_internal(i, speed_to_write)
                     else:

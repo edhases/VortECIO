@@ -76,9 +76,12 @@ class MainWindow(ctk.CTk):
         # Cancel all debounce timers
         for attr in dir(self):
             if attr.startswith('_slider_timer_'):
-                timer_id = getattr(self, attr)
+                timer_id = getattr(self, attr, None)
                 if timer_id:
-                    self.after_cancel(timer_id)
+                    try:
+                        self.after_cancel(timer_id)
+                    except Exception:
+                        pass  # Timer may have already fired or be invalid
 
         for widget in self.winfo_children():
             widget.destroy()
