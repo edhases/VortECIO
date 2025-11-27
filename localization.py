@@ -39,7 +39,12 @@ LOCALIZATION = {
         "restart_required_title": "Restart Required",
         "restart_required_msg": "Please restart the application to apply plugin changes.",
         "tray_show": "Show",
-        "tray_quit": "Quit"
+        "tray_quit": "Quit",
+        "plugin_manager_title": "Manage Plugins",
+        "select_active_plugins": "Select active plugins:",
+        "save": "Save",
+        "cancel": "Cancel",
+        "plugins_restart_warning": "⚠️ Changes take effect after restart"
     },
     "uk": {
         "app_title": "VortECIO Керування Вентиляторами",
@@ -81,7 +86,12 @@ LOCALIZATION = {
         "restart_required_title": "Потрібне перезавантаження",
         "restart_required_msg": "Будь ласка, перезапустіть програму, щоб застосувати зміни плагінів.",
         "tray_show": "Показати",
-        "tray_quit": "Вихід"
+        "tray_quit": "Вихід",
+        "plugin_manager_title": "Керування плагінами",
+        "select_active_plugins": "Виберіть активні плагіни:",
+        "save": "Зберегти",
+        "cancel": "Скасувати",
+        "plugins_restart_warning": "⚠️ Зміни набудуть чинності після перезапуску"
     },
     "de": {
         "app_title": "VortECIO Lüftersteuerung",

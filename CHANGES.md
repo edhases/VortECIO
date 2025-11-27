@@ -1,4 +1,28 @@
-# Critical Bug Fixes - 2025-11-27
+# Final Production Readiness Fixes - 2025-11-27 (Round 3)
+
+This update addresses the final set of critical issues identified, ensuring the application is stable, robust, and user-friendly.
+
+## Key Fixes:
+
+### 1. Robust XML Configuration Parsing (`main.py`)
+- **Problem:** The application would crash if an XML config file used floating-point numbers (e.g., "60.0") or hexadecimal values (e.g., "0x60") for integer settings.
+- **Solution:** Implemented a universal `_to_int` helper function in the `NbfcConfigParser` that correctly handles integers, floats, and hex strings, preventing crashes and improving compatibility with diverse NBFC configs.
+
+### 2. Modernized Plugin Manager UI (`ui/plugin_manager_window.py`)
+- **Problem:** The Plugin Manager window used the outdated `tkinter` library, creating a jarring visual inconsistency with the rest of the `customtkinter`-based UI.
+- **Solution:** The entire Plugin Manager window has been rewritten using `customtkinter` widgets. It now fully supports the application's modern look and feel, including theme changes and localization. New translation keys were added to `localization.py` to support this.
+
+### 3. Fixed UI Language Switching (`main.py`)
+- **Problem:** Changing the language in the settings did not update the UI text as expected.
+- **Solution:** Corrected the `set_language` logic to update the localization module's internal state *before* triggering the UI recreation. This ensures all text is correctly translated immediately after a language change.
+
+### 4. Streamlined DLL Unblocking (`main.py`)
+- **Problem:** The startup process for unblocking necessary DLLs on Windows was not optimized.
+- **Solution:** The DLL unblocking logic now uses a de-duplicated list of file paths, ensuring each DLL is processed exactly once. This improves startup efficiency and reliability.
+
+---
+
+# Critical Bug Fixes - 2025-11-27 (Round 2)
 
 ## Tier 1: Critical Blockers
 

@@ -4,6 +4,18 @@ LibreHardwareMonitor Sensor Plugin
 """
 import logging
 import os
+import sys
+
+# Redundant unblocking for safety
+if sys.platform == 'win32':
+    try:
+        from utils import unblock_file
+        plugin_dir = os.path.dirname(__file__)
+        unblock_file(os.path.join(plugin_dir, 'LibreHardwareMonitorLib.dll'))
+        unblock_file(os.path.join(plugin_dir, 'HidSharp.dll'))
+    except Exception as e:
+        logging.getLogger('FanControl.LHM').error(f"Pre-emptive unblock failed: {e}")
+
 
 logger = logging.getLogger('FanControl.LHM')
 
@@ -11,7 +23,6 @@ logger = logging.getLogger('FanControl.LHM')
 HAS_LHM = False
 try:
     import clr
-    import sys
 
     # Знайти DLL
     dll_path = os.path.join(os.path.dirname(__file__), 'LibreHardwareMonitorLib.dll')
