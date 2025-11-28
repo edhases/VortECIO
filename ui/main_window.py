@@ -1,4 +1,5 @@
 import customtkinter as ctk
+import os
 from customtkinter import filedialog
 from logger import get_logger
 from localization import translate
@@ -92,6 +93,9 @@ class MainWindow(ctk.CTk):
 
         # Set theme and appearance
         ctk.set_appearance_mode(self.app_logic.config.get("theme", "dark"))
+
+        if os.path.exists("app.ico"):
+            self.iconbitmap("app.ico")
 
         self.recreate_ui()
         self.protocol("WM_DELETE_WINDOW", self.app_logic.on_closing)
