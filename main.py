@@ -125,6 +125,16 @@ class NbfcConfigParser:
                 reset_val_node = fan_node.find('FanSpeedResetValue')
                 reset_val = self._to_int(reset_val_node.text) if reset_val_node is not None and reset_val_node.text else 255
 
+                # NBFC specific read values
+                min_speed_read_node = fan_node.find('MinSpeedValueRead')
+                min_speed_read = self._to_int(min_speed_read_node.text) if min_speed_read_node is not None and min_speed_read_node.text else 0
+
+                max_speed_read_node = fan_node.find('MaxSpeedValueRead')
+                max_speed_read = self._to_int(max_speed_read_node.text) if max_speed_read_node is not None and max_speed_read_node.text else 0
+
+                independent_read_node = fan_node.find('IndependentReadMinMaxValues')
+                independent_read = independent_read_node.text.lower() == 'true' if independent_read_node is not None and independent_read_node.text else False
+
                 # Store validated values
                 fan: Dict[str, Any] = {
                     'name': fan_name,
@@ -132,6 +142,9 @@ class NbfcConfigParser:
                     'write_reg': write_reg,
                     'min_speed': min_speed,
                     'max_speed': max_speed,
+                    'min_speed_read': min_speed_read,
+                    'max_speed_read': max_speed_read,
+                    'independent_read_min_max': independent_read,
                     'reset_val': reset_val,
                     'is_inverted': min_speed > max_speed,
                     'temp_thresholds': []
