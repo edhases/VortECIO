@@ -419,7 +419,10 @@ class AppLogic:
         self.driver.write_register(write_reg, speed)
 
     def on_closing(self) -> None:
-        self.main_window.withdraw()
+        if self.system_tray:
+            self.main_window.withdraw()
+        else:
+            self.quit()
 
     def quit(self) -> None:
         self.stop_event.set()
@@ -439,12 +442,15 @@ class AppLogic:
         self.main_window.quit()
 
     def run(self) -> None:
-        if sys.platform == 'win32':
+        if sys.platform == 'win32' and self.system_tray:
             threading.Thread(target=self.system_tray.create_icon, daemon=True).start()
-        if '--start-in-tray' in sys.argv and sys.platform == 'win32':
+
+        start_minimized = self.config.get("start_minimized", False) or '--start-in-tray' in sys.argv
+        if start_minimized and sys.platform == 'win32':
             self.main_window.withdraw()
         else:
             self.main_window.deiconify()
+
         self.main_window.mainloop()
 
     def toggle_autostart(self) -> None:
@@ -475,10 +481,10 @@ from utils import normalize_fan_speed
 import hashlib
 from tkinter import messagebox
 
-# TODO: Generate hashes using generate_hashes.py script
 KNOWN_HASHES = {
-    'inpoutx64.dll': None,  # User must fill this
-    'LibreHardwareMonitorLib.dll': None,
+    'inpoutx64.dll': '5f27ed4d5cd58a1ee23deeb802e09e73f3a1d884ce2135f6e827f67b171269e7',
+    'LibreHardwareMonitorLib.dll': 'a0f2728f1734c236a9d02d9e25a88bc4f8cb7bd1faff1770726beb7af06bf8dc',
+    'HidSharp.dll': '8c58e5fba22acc751032dfe97ce633e4f8a4c96089749bf316d55283b36649c2'
 }
 
 def unblock_file(filepath: str) -> None:
@@ -520,9 +526,17 @@ def verify_and_unblock(filepath: str) -> bool:
 def main() -> None:
     setup_logger()
     if sys.platform == 'win32':
-        verify_and_unblock('inpoutx64.dll')
-        verify_and_unblock('plugins/lhm_sensor/LibreHardwareMonitorLib.dll')
-        verify_and_unblock('plugins/lhm_sensor/HidSharp.dll')
+        required_dlls = [
+            'inpoutx64.dll',
+            'plugins/lhm_sensor/LibreHardwareMonitorLib.dll',
+            'plugins/lhm_sensor/HidSharp.dll'
+        ]
+        for dll_path in required_dlls:
+            if not verify_and_unblock(dll_path):
+                filename = os.path.basename(dll_path)
+                logging.critical(f"Security violation: Hash mismatch for {filename}!")
+                sys.exit(1)
+
         try:
             is_admin = ctypes.windll.shell32.IsUserAnAdmin()
         except AttributeError:

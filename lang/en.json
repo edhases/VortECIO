@@ -12,5 +12,7 @@
     "select_active_plugins": "Select active plugins:",
     "save": "Save",
     "cancel": "Cancel",
-    "plugins_restart_warning": "⚠️ Changes take effect after restart"
+    "plugins_restart_warning": "⚠️ Changes take effect after restart",
+    "tray_show": "Show VortECIO",
+    "tray_quit": "Quit"
 }

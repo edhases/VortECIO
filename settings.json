@@ -1,9 +1,11 @@
 {
     "last_config_path": null,
-    "theme": "light",
+    "theme": "system",
     "language": "en",
     "autostart": false,
-    "active_plugins": [],
+    "active_plugins": [
+        "lhm_sensor"
+    ],
     "detailed_logging": false,
     "log_level": "INFO",
     "critical_temp_action": "ask",

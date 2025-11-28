@@ -12,5 +12,7 @@
     "select_active_plugins": "Aktive Plugins auswählen:",
     "save": "Speichern",
     "cancel": "Abbrechen",
-    "plugins_restart_warning": "⚠️ Änderungen werden nach dem Neustart wirksam"
+    "plugins_restart_warning": "⚠️ Änderungen werden nach dem Neustart wirksam",
+    "tray_show": "VortECIO anzeigen",
+    "tray_quit": "Beenden"
 }

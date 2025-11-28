@@ -12,6 +12,7 @@ logger = get_logger(__name__)
 class FanController:
     def __init__(self, app_logic: 'AppLogic') -> None:
         self.app_logic: 'AppLogic' = app_logic
+        self.logger = get_logger(__name__)
         self.stop_event: threading.Event = threading.Event()
         self.control_thread: Optional[threading.Thread] = None
         self.last_speed: Dict[int, int] = {}

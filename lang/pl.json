@@ -12,5 +12,7 @@
     "select_active_plugins": "Wybierz aktywne wtyczki:",
     "save": "Zapisz",
     "cancel": "Anuluj",
-    "plugins_restart_warning": "⚠️ Zmiany zaczną obowiązywać po ponownym uruchomieniu"
+    "plugins_restart_warning": "⚠️ Zmiany zaczną obowiązywać po ponownym uruchomieniu",
+    "tray_show": "Pokaż VortECIO",
+    "tray_quit": "Zakończ"
 }
