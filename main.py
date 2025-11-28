@@ -125,7 +125,7 @@ class NbfcConfigParser:
                 reset_val_node = fan_node.find('FanSpeedResetValue')
                 reset_val = self._to_int(reset_val_node.text) if reset_val_node is not None and reset_val_node.text else 255
 
-                # NBFC specific read values
+                # --- NEW NBFC FIELDS START ---
                 min_speed_read_node = fan_node.find('MinSpeedValueRead')
                 min_speed_read = self._to_int(min_speed_read_node.text) if min_speed_read_node is not None and min_speed_read_node.text else 0
 
@@ -133,7 +133,10 @@ class NbfcConfigParser:
                 max_speed_read = self._to_int(max_speed_read_node.text) if max_speed_read_node is not None and max_speed_read_node.text else 0
 
                 independent_read_node = fan_node.find('IndependentReadMinMaxValues')
-                independent_read = independent_read_node.text.lower() == 'true' if independent_read_node is not None and independent_read_node.text else False
+                independent_read = False
+                if independent_read_node is not None and independent_read_node.text:
+                    independent_read = independent_read_node.text.lower() == 'true'
+                # --- NEW NBFC FIELDS END ---
 
                 # Store validated values
                 fan: Dict[str, Any] = {
@@ -142,6 +145,7 @@ class NbfcConfigParser:
                     'write_reg': write_reg,
                     'min_speed': min_speed,
                     'max_speed': max_speed,
+                    # Add new fields to fan config dict
                     'min_speed_read': min_speed_read,
                     'max_speed_read': max_speed_read,
                     'independent_read_min_max': independent_read,

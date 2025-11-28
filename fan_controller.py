@@ -263,7 +263,7 @@ class FanController:
             return 'manual'
 
     def _calculate_percent(self, fan_index: int, rpm: int, fan_config: Dict[str, Any]) -> int:
-        # Priority 1: Use independent read values if specified in config
+        # Priority 1: Use independent read values if specified in config (NBFC standard)
         if fan_config.get('independent_read_min_max', False):
             min_read = fan_config.get('min_speed_read', 0)
             max_read = fan_config.get('max_speed_read', 0)
@@ -271,14 +271,19 @@ class FanController:
 
         # Priority 2: Use adaptive RPM scaling
         config_max = fan_config.get('max_speed', 255)
-        if rpm > config_max * 1.5:  # e.g., RPM is 3000, config_max is 255
-            # "Cold start" logic for adaptive RPM
+
+        # If RPM looks like a raw RPM value (significantly higher than 255)
+        if rpm > config_max * 1.5:
+            # --- COLD START FIX ---
+            # Initialize max_observed_speed with the first valid reading > 0.
+            # This prevents the "66%" issue by treating the current speed as 100% initially.
             if fan_index not in self.max_observed_speed and rpm > 0:
                 self.max_observed_speed[fan_index] = rpm
+            # ----------------------
 
             max_observed = self.max_observed_speed.get(fan_index, 3000)
 
-            # Update max_observed only if the new value is realistic
+            # Update max_observed only if the new value is realistic (filter glitches > 12000)
             if rpm > max_observed and rpm < 12000:
                 self.max_observed_speed[fan_index] = rpm
                 max_observed = rpm
