@@ -19,6 +19,7 @@ class FanController:
         self.sensor_errors: int = 0
         self.fan_states: Dict[int, str] = {}
         self.critical_temperature: float = 90.0
+        self.max_observed_speed: Dict[int, int] = {}
         self._fan_mode_cache: Dict[int, int] = {}
         self._cache_lock: threading.Lock = threading.Lock()
         self._cache_updated: threading.Event = threading.Event()
@@ -216,7 +217,7 @@ class FanController:
                         # For all other modes (Auto, Manual, Read-only), read and display RPM
                         rpm = self.app_logic.driver.read_register(fan['read_reg'])
                         if rpm is not None:
-                            percent = self._calculate_percent(rpm, fan)
+                            percent = self._calculate_percent(i, rpm, fan)
                             self.app_logic.main_window.after(0, self.app_logic.main_window.update_fan_readings, i, rpm, percent)
                             detailed_logger = get_detailed_logger()
                             if detailed_logger:
@@ -261,8 +262,28 @@ class FanController:
         else:
             return 'manual'
 
-    def _calculate_percent(self, rpm: int, fan_config: Dict[str, Any]) -> int:
-        return normalize_fan_speed(rpm, fan_config)
+    def _calculate_percent(self, fan_index: int, rpm: int, fan_config: Dict[str, Any]) -> int:
+        config_max = fan_config.get('max_speed', 255)
+
+        # If RPM looks like a raw RPM value instead of a register value
+        if rpm > config_max * 1.5:  # e.g., RPM is 3000, config_max is 255
+            # Get the last observed max for this fan, defaulting to a reasonable guess
+            max_observed = self.max_observed_speed.get(fan_index, 3000)
+
+            if rpm > max_observed:
+                self.max_observed_speed[fan_index] = rpm
+                max_observed = rpm
+
+            # Prevent division by zero
+            if max_observed == 0:
+                return 0
+
+            # Calculate percentage based on the dynamic maximum
+            percent = int((rpm / max_observed) * 100)
+            return min(100, max(0, percent)) # Clamp to 0-100 range
+        else:
+            # Otherwise, use the standard normalization based on config values
+            return normalize_fan_speed(rpm, fan_config)
 
     def _get_speed_for_temp(self, fan_index: int, fan_config: Dict[str, Any], temp: Optional[float]) -> int:
         last_speed = self.last_speed.get(fan_index, 0)

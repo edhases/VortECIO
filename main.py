@@ -526,6 +526,8 @@ def verify_and_unblock(filepath: str) -> bool:
 def main() -> None:
     setup_logger()
     if sys.platform == 'win32':
+        myappid = 'vortecio.app.control.v1'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         required_dlls = [
             'inpoutx64.dll',
             'plugins/lhm_sensor/LibreHardwareMonitorLib.dll',

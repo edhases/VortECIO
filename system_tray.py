@@ -1,3 +1,4 @@
+import os
 from pystray import Icon, MenuItem, Menu
 from PIL import Image
 from localization import translate
@@ -8,15 +9,23 @@ class SystemTray:
         self.icon = None
 
     def create_icon(self):
-        # Create a dummy image for the icon
-        image = Image.new('RGB', (64, 64), 'black')
+        icon_image = None
+        if os.path.exists("app.ico"):
+            try:
+                icon_image = Image.open("app.ico")
+            except Exception as e:
+                print(f"Failed to load app.ico: {e}")
+
+        if not icon_image:
+            # Create a dummy image for the icon if app.ico is not found
+            icon_image = Image.new('RGB', (64, 64), 'black')
 
         menu = Menu(
             MenuItem(lambda text: translate("tray_show"), self.on_show),
             MenuItem(lambda text: translate("tray_quit"), self.on_exit)
         )
 
-        self.icon = Icon("VortECIO", image, "VortECIO Fan Control", menu)
+        self.icon = Icon("VortECIO", icon_image, "VortECIO Fan Control", menu)
 
         # Run the icon in a separate thread
         import threading
