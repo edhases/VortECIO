@@ -233,8 +233,7 @@ class SettingsWindow(ctk.CTkToplevel):
         )
 
     def open_plugin_manager(self):
-        from ui.plugin_manager_window import PluginManagerWindow
-        PluginManagerWindow(self.app_logic.main_window, self.app_logic)
+        self.app_logic.main_window.open_plugin_manager()
 
     def create_about_tab(self, parent):
         """About information"""

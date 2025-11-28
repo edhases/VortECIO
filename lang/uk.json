@@ -12,5 +12,7 @@
     "select_active_plugins": "Виберіть активні плагіни:",
     "save": "Зберегти",
     "cancel": "Скасувати",
-    "plugins_restart_warning": "⚠️ Зміни набудуть чинності після перезапуску"
+    "plugins_restart_warning": "⚠️ Зміни набудуть чинності після перезапуску",
+    "tray_show": "Показати VortECIO",
+    "tray_quit": "Вийти"
 }

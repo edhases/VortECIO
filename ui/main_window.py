@@ -85,6 +85,8 @@ class MainWindow(ctk.CTk):
         self.fan_rpm_labels = {}
         self.fan_frames = {}
         self.mode_indicators = {}
+        self.settings_window = None
+        self.plugin_manager_window = None
 
         self.autostart_var = ctk.BooleanVar(value=self.app_logic.config.get("autostart", False))
 
@@ -200,8 +202,17 @@ class MainWindow(ctk.CTk):
 
     def open_settings(self):
         from ui.settings_window import SettingsWindow
-        if not hasattr(self, 'settings_window') or not self.settings_window.winfo_exists():
+        if self.settings_window is None or not self.settings_window.winfo_exists():
             self.settings_window = SettingsWindow(self, self.app_logic)
+        else:
+            self.settings_window.focus()
+
+    def open_plugin_manager(self):
+        from ui.plugin_manager_window import PluginManagerWindow
+        if self.plugin_manager_window is None or not self.plugin_manager_window.winfo_exists():
+            self.plugin_manager_window = PluginManagerWindow(self, self.app_logic)
+        else:
+            self.plugin_manager_window.focus()
 
     def create_fan_widgets(self, fans):
         for widget in self.fan_display_frame.winfo_children():
@@ -272,13 +283,9 @@ class MainWindow(ctk.CTk):
         CTkToolTip(slider, message="Drag to adjust fan speed (0-100%)")
 
         # Value labels
-        speed_label = ctk.CTkLabel(slider_frame, text="50%", width=50)
+        speed_label = ctk.CTkLabel(slider_frame, text="--%", width=50)
         speed_label.pack(side="left", padx=5)
         self.fan_speed_labels[fan_index] = speed_label
-
-        rpm_label = ctk.CTkLabel(slider_frame, text="-- RPM", width=80)
-        rpm_label.pack(side="left", padx=5)
-        self.fan_rpm_labels[fan_index] = rpm_label
 
     def on_mode_change(self, fan_index: int, mode: str):
         """Handle mode change"""
