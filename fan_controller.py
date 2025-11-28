@@ -272,6 +272,10 @@ class FanController:
         # Priority 2: Use adaptive RPM scaling
         config_max = fan_config.get('max_speed', 255)
         if rpm > config_max * 1.5:  # e.g., RPM is 3000, config_max is 255
+            # "Cold start" logic for adaptive RPM
+            if fan_index not in self.max_observed_speed and rpm > 0:
+                self.max_observed_speed[fan_index] = rpm
+
             max_observed = self.max_observed_speed.get(fan_index, 3000)
 
             # Update max_observed only if the new value is realistic

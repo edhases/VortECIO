@@ -53,19 +53,41 @@ class LhmSensor:
         self.computer.IsCpuEnabled = True
         self.computer.IsMotherboardEnabled = True
         self.computer.IsGpuEnabled = True
-        self.computer.IsMemoryEnabled = False  # Не потрібна RAM
-        self.computer.IsStorageEnabled = False  # Не потрібні диски
-        self.computer.IsNetworkEnabled = False  # Не потрібна мережа
+        self.computer.IsMemoryEnabled = False
+        self.computer.IsStorageEnabled = False
+        self.computer.IsNetworkEnabled = False
 
         self._logged_cpu_source = False
+        self._cpu_hardware = None
+        self._gpu_hardware = None
 
         try:
             self.computer.Open()
             logger.info("LHM Computer opened successfully")
+            self._scan_hardware()
             self._log_available_hardware()
         except Exception as e:
             logger.error(f"Failed to open LHM Computer: {e}")
             raise
+
+    def _scan_hardware(self):
+        """
+        Scans hardware ONCE and caches references to CPU and GPU devices.
+        This is a critical performance optimization.
+        """
+        logger.info("Scanning for CPU and GPU hardware...")
+        for hardware in self.computer.Hardware:
+            if hardware.HardwareType == HardwareType.Cpu:
+                self._cpu_hardware = hardware
+                logger.info(f"✓ CPU hardware found: {hardware.Name}")
+            elif hardware.HardwareType in (HardwareType.GpuAmd, HardwareType.GpuNvidia, HardwareType.GpuIntel):
+                self._gpu_hardware = hardware
+                logger.info(f"✓ GPU hardware found: {hardware.Name}")
+
+        if not self._cpu_hardware:
+            logger.warning("No CPU hardware found by LHM.")
+        if not self._gpu_hardware:
+            logger.warning("No GPU hardware found by LHM.")
 
     def _log_available_hardware(self):
         """Логування доступного обладнання (для дебагу)"""
@@ -82,10 +104,10 @@ class LhmSensor:
 
     def get_temperatures(self):
         """
-        Universal temperature detection for all CPU types.
+        Universal temperature detection using cached hardware references.
         Priority order:
         1. CPU Package (Intel standard)
-        2. Tctl/Tdie (AMD Ryzen standard) - NOT a fallback!
+        2. Tctl/Tdie (AMD Ryzen standard)
         3. Core Average (generic fallback)
         4. Core #0/Core 1 (old CPUs)
         5. ANY temperature sensor (desperate fallback)
@@ -94,86 +116,67 @@ class LhmSensor:
         gpu_temp = None
         cpu_sensor_name = None
 
-        # Find CPU hardware
-        for hardware in self.computer.Hardware:
-            if hardware.HardwareType == HardwareType.Cpu:
-                hardware.Update()
+        # Find CPU temperature using cached reference
+        if self._cpu_hardware:
+            self._cpu_hardware.Update()
+            temp_sensors = [(s.Name, s.Value) for s in self._cpu_hardware.Sensors if s.SensorType == SensorType.Temperature and s.Value is not None]
 
-                # Collect all temperature sensors
-                temp_sensors = []
-                for sensor in hardware.Sensors:
-                    if sensor.SensorType == SensorType.Temperature and sensor.Value is not None:
-                        temp_sensors.append((sensor.Name, sensor.Value))
+            # Priority 1: CPU Package
+            for name, value in temp_sensors:
+                if "package" in name.lower():
+                    cpu_temp = value
+                    cpu_sensor_name = name
+                    break
 
-                # Priority 1: CPU Package (Intel standard)
+            # Priority 2: Tctl/Tdie
+            if cpu_temp is None:
                 for name, value in temp_sensors:
-                    if "package" in name.lower():
+                    if "tctl" in name.lower() or "tdie" in name.lower():
                         cpu_temp = value
                         cpu_sensor_name = name
                         break
 
-                # Priority 2: Tctl/Tdie (AMD Ryzen standard - NOT FALLBACK!)
-                if cpu_temp is None:
-                    for name, value in temp_sensors:
-                        if "tctl" in name.lower() or "tdie" in name.lower():
-                            cpu_temp = value
-                            cpu_sensor_name = name
-                            break
-
-                # Priority 3: Core Average (generic)
-                if cpu_temp is None:
-                    for name, value in temp_sensors:
-                        if "average" in name.lower() and "core" in name.lower():
-                            cpu_temp = value
-                            cpu_sensor_name = name
-                            break
-
-                # Priority 4: Core #0 / Core 1 (old CPUs)
-                if cpu_temp is None:
-                    for name, value in temp_sensors:
-                        if "core" in name.lower() and any(c.isdigit() for c in name):
-                            cpu_temp = value
-                            cpu_sensor_name = name
-                            break
-
-                # Priority 5: ANY temperature - use MAX for safety
-                if cpu_temp is None and len(temp_sensors) > 0:
-                    max_sensor = max(temp_sensors, key=lambda x: x[1])
-                    cpu_temp = max_sensor[1]
-                    cpu_sensor_name = f"Max of {len(temp_sensors)} sensors"
-                    self.logger.warning(f"Using generic fallback: {cpu_sensor_name}")
-
-                # Log sensor source ONCE at startup (not every second!)
-                if cpu_temp is not None and not self._logged_cpu_source:
-                    self.logger.info(f"✓ CPU temperature source: {cpu_sensor_name} = {cpu_temp:.1f}°C")
-                    self._logged_cpu_source = True
-
-                break  # Found CPU
-
-        # Find GPU hardware (same universal logic)
-        for hardware in self.computer.Hardware:
-            if hardware.HardwareType in (HardwareType.GpuAmd, HardwareType.GpuNvidia, HardwareType.GpuIntel):
-                hardware.Update()
-
-                temp_sensors = []
-                for sensor in hardware.Sensors:
-                    if sensor.SensorType == SensorType.Temperature and sensor.Value is not None:
-                        temp_sensors.append((sensor.Name, sensor.Value))
-
-                # Priority 1: GPU Core / GPU Temperature
+            # Priority 3: Core Average
+            if cpu_temp is None:
                 for name, value in temp_sensors:
-                    if "core" in name.lower() or "gpu" in name.lower():
-                        gpu_temp = value
+                    if "average" in name.lower() and "core" in name.lower():
+                        cpu_temp = value
+                        cpu_sensor_name = name
                         break
 
-                # Priority 2: ANY temperature
-                if gpu_temp is None and len(temp_sensors) > 0:
-                    gpu_temp = temp_sensors[0][1]
+            # Priority 4: Core #0 / Core 1
+            if cpu_temp is None:
+                for name, value in temp_sensors:
+                    if "core" in name.lower() and any(c.isdigit() for c in name):
+                        cpu_temp = value
+                        cpu_sensor_name = name
+                        break
 
-                if gpu_temp is not None:
+            # Priority 5: ANY temperature (MAX)
+            if cpu_temp is None and temp_sensors:
+                max_sensor = max(temp_sensors, key=lambda x: x[1])
+                cpu_temp, cpu_sensor_name = max_sensor[1], f"Max of {len(temp_sensors)} sensors"
+                self.logger.warning(f"Using generic fallback for CPU: {cpu_sensor_name}")
+
+            if cpu_temp is not None and not self._logged_cpu_source:
+                self.logger.info(f"✓ CPU temperature source: {cpu_sensor_name} = {cpu_temp:.1f}°C")
+                self._logged_cpu_source = True
+
+        # Find GPU temperature using cached reference
+        if self._gpu_hardware:
+            self._gpu_hardware.Update()
+            temp_sensors = [(s.Name, s.Value) for s in self._gpu_hardware.Sensors if s.SensorType == SensorType.Temperature and s.Value is not None]
+
+            # Priority 1: GPU Core / GPU Temperature
+            for name, value in temp_sensors:
+                if "core" in name.lower() or "gpu" in name.lower():
+                    gpu_temp = value
                     break
 
-        # Error handling
+            # Priority 2: ANY temperature
+            if gpu_temp is None and temp_sensors:
+                gpu_temp = temp_sensors[0][1]
+
         if cpu_temp is None:
             self.logger.error("❌ No CPU temperature sensors found in LHM!")
 
