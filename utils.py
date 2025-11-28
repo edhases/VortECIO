@@ -1,8 +1,14 @@
 from typing import Dict, Any
 
-def normalize_fan_speed(raw_value: int, fan_config: Dict[str, Any]) -> int:
-    min_val = fan_config['min_speed']
-    max_val = fan_config['max_speed']
+def normalize_fan_speed(raw_value: int, fan_config: Dict[str, Any], min_val: int = None, max_val: int = None) -> int:
+    # Use provided min/max if available, otherwise fall back to fan_config
+    min_val = min_val if min_val is not None else fan_config['min_speed']
+    max_val = max_val if max_val is not None else fan_config['max_speed']
+
+    # Prevent division by zero if min and max are the same
+    if min_val == max_val:
+        return 0 if raw_value <= min_val else 100
+
     if fan_config.get('is_inverted', False):
         if raw_value >= min_val: return 0
         if raw_value <= max_val: return 100

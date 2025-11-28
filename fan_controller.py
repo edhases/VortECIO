@@ -263,27 +263,30 @@ class FanController:
             return 'manual'
 
     def _calculate_percent(self, fan_index: int, rpm: int, fan_config: Dict[str, Any]) -> int:
-        config_max = fan_config.get('max_speed', 255)
+        # Priority 1: Use independent read values if specified in config
+        if fan_config.get('independent_read_min_max', False):
+            min_read = fan_config.get('min_speed_read', 0)
+            max_read = fan_config.get('max_speed_read', 0)
+            return normalize_fan_speed(rpm, fan_config, min_val=min_read, max_val=max_read)
 
-        # If RPM looks like a raw RPM value instead of a register value
+        # Priority 2: Use adaptive RPM scaling
+        config_max = fan_config.get('max_speed', 255)
         if rpm > config_max * 1.5:  # e.g., RPM is 3000, config_max is 255
-            # Get the last observed max for this fan, defaulting to a reasonable guess
             max_observed = self.max_observed_speed.get(fan_index, 3000)
 
-            if rpm > max_observed:
+            # Update max_observed only if the new value is realistic
+            if rpm > max_observed and rpm < 12000:
                 self.max_observed_speed[fan_index] = rpm
                 max_observed = rpm
 
-            # Prevent division by zero
             if max_observed == 0:
                 return 0
 
-            # Calculate percentage based on the dynamic maximum
             percent = int((rpm / max_observed) * 100)
-            return min(100, max(0, percent)) # Clamp to 0-100 range
-        else:
-            # Otherwise, use the standard normalization based on config values
-            return normalize_fan_speed(rpm, fan_config)
+            return min(100, max(0, percent))
+
+        # Fallback: Standard normalization
+        return normalize_fan_speed(rpm, fan_config)
 
     def _get_speed_for_temp(self, fan_index: int, fan_config: Dict[str, Any], temp: Optional[float]) -> int:
         last_speed = self.last_speed.get(fan_index, 0)
