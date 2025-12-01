@@ -30,3 +30,19 @@ def denormalize_fan_speed(percent: int, fan_config: Dict[str, Any]) -> int:
     lower_bound = min(min_val, max_val)
     upper_bound = max(min_val, max_val)
     return max(lower_bound, min(upper_bound, raw))
+
+from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+def validate_temperature(temp: Optional[float], name: str) -> Optional[float]:
+    """Check if a temperature is within a reasonable range."""
+    if temp is None:
+        return None
+
+    if not (0 <= temp <= 120):  # Reasonable range for CPU/GPU
+        logger.warning(f"Invalid {name} temperature detected: {temp}°C. Ignoring value.")
+        return None
+
+    return temp
