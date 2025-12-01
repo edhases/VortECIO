@@ -3,7 +3,7 @@ import time
 import os
 import sys
 import threading
-from typing import Optional
+from typing import Optional, Dict
 from logger import get_logger
 from advanced_logging import get_detailed_logger
 
@@ -35,6 +35,12 @@ class EcDriver:
         self.EC_CMD_WRITE: int = 0x81
         self.EC_IBF: int = 0x02
         self.EC_OBF: int = 0x01
+
+        # --- NEW FIELDS FOR OPTIMIZATION ---
+        self._ec_write_cache: Dict[int, int] = {}  # {register: value}
+        self._last_write_time: Dict[int, float] = {}  # {register: timestamp}
+        self._min_write_interval: float = 0.3  # 300ms between writes to the same register
+
         self._load_driver()
 
     def _load_driver(self) -> None:
@@ -58,7 +64,7 @@ class EcDriver:
         while (time.perf_counter() - start) < timeout:
             if not (self.inpout.Inp32(self.EC_SC) & self.EC_IBF):
                 return True
-            time.sleep(0.0001)  # 100 microseconds - imperceptible latency, massive CPU savings
+            time.sleep(0.0001)
         return False
 
     def _wait_obf(self) -> bool:
@@ -68,7 +74,7 @@ class EcDriver:
         while (time.perf_counter() - start) < timeout:
             if self.inpout.Inp32(self.EC_SC) & self.EC_OBF:
                 return True
-            time.sleep(0.0001)  # 100 microseconds - imperceptible latency, massive CPU savings
+            time.sleep(0.0001)
         return False
 
     def read_register(self, reg: int) -> Optional[int]:
@@ -86,19 +92,41 @@ class EcDriver:
                 detailed_logger.log_ec_operation('read', reg, result, success=True)
             return result
 
-    def write_register(self, reg: int, val: int) -> bool:
+    def _raw_ec_write(self, reg: int, val: int) -> bool:
+        """Original write method, now private."""
         if not self.is_initialized or not self.inpout:
             return False
+
+        if not self._wait_ibf(): return False
+        self.inpout.Out32(self.EC_SC, self.EC_CMD_WRITE)
+        if not self._wait_ibf(): return False
+        self.inpout.Out32(self.EC_DATA, reg)
+        if not self._wait_ibf(): return False
+        self.inpout.Out32(self.EC_DATA, val)
+        return True
+
+    def write_register(self, reg: int, val: int) -> bool:
+        """Optimized write with caching and throttling."""
+        # 1. CACHING: Don't write if the value hasn't changed
+        if self._ec_write_cache.get(reg) == val:
+            return True  # Success (from cache)
+
+        # 2. THROTTLING: Don't write too frequently
+        current_time = time.time()
+        last_write = self._last_write_time.get(reg, 0)
+
+        if (current_time - last_write) < self._min_write_interval:
+            return True  # Skip write, return success
+
+        # 3. PERFORM REAL WRITE
         with self.lock:
-            success = False
-            if not self._wait_ibf(): return False
-            self.inpout.Out32(self.EC_SC, self.EC_CMD_WRITE)
-            if not self._wait_ibf(): return False
-            self.inpout.Out32(self.EC_DATA, reg)
-            if not self._wait_ibf(): return False
-            self.inpout.Out32(self.EC_DATA, val)
-            success = True
+            success = self._raw_ec_write(reg, val)
+            if success:
+                self._ec_write_cache[reg] = val
+                self._last_write_time[reg] = current_time
+
             detailed_logger = get_detailed_logger()
             if detailed_logger:
                 detailed_logger.log_ec_operation('write', reg, val, success=success)
+
             return success

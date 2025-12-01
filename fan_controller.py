@@ -3,7 +3,7 @@ import time
 import bisect
 from typing import Dict, Any, Optional
 from logger import get_logger
-from utils import normalize_fan_speed, denormalize_fan_speed
+from utils import normalize_fan_speed, denormalize_fan_speed, validate_temperature
 from advanced_logging import get_detailed_logger
 
 
@@ -152,6 +152,11 @@ class FanController:
                 sensor = self.app_logic.get_active_sensor()
                 if sensor:
                     cpu_temp, gpu_temp = sensor.get_temperatures()
+
+                    # Validate temperatures
+                    cpu_temp = validate_temperature(cpu_temp, "CPU")
+                    gpu_temp = validate_temperature(gpu_temp, "GPU")
+
                     self.last_cpu_temp = cpu_temp
                     self.last_gpu_temp = gpu_temp
                     self.app_logic.main_window.after(0, self.app_logic.main_window.update_temp_readings, cpu_temp, gpu_temp)
@@ -215,8 +220,14 @@ class FanController:
                             self.app_logic.main_window.after(0, self.app_logic.main_window.clear_fan_display, i)
                     else:
                         # For all other modes (Auto, Manual, Read-only), read and display RPM
-                        rpm = self.app_logic.driver.read_register(fan['read_reg'])
-                        if rpm is not None:
+                        rpm = 0
+                        sensor = self.app_logic.get_active_sensor()
+                        if hasattr(sensor, 'get_fan_rpm'):
+                            rpm_val = sensor.get_fan_rpm(i)
+                            if rpm_val is not None:
+                                rpm = rpm_val
+
+                        if rpm is not None: # Note: rpm can now be 0, which is a valid state
                             percent = self._calculate_percent(i, rpm, fan)
                             self.app_logic.main_window.after(0, self.app_logic.main_window.update_fan_readings, i, rpm, percent)
                             detailed_logger = get_detailed_logger()
