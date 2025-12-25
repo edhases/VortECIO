@@ -1,7 +1,0 @@
-2025-11-27 15:32:43 | INFO     | FanControl | === FanControl Started ===
-2025-11-27 15:32:43 | INFO     | FanControl | Log file: logs/fancontrol_20251127_153243.log
-2025-11-27 15:32:43 | INFO     | FanControl.Config | Config loaded from settings.json
-2025-11-27 15:32:43 | INFO     | root | Running on non-Windows OS, WMI sensor is disabled.
-2025-11-27 15:32:43 | INFO     | FanControl.MainWindow | MainWindow initialized
-2025-11-27 15:32:43 | INFO     | FanControl.plugin_manager | Discovering plugins...
-2025-11-27 15:32:44 | INFO     | FanControl.Config | Saved 1 config changes

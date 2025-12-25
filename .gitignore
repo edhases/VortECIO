@@ -1,4 +1,3 @@
-__pycache__/
-*.pyc
-*.log
-logs/
+build/bin
+node_modules
+frontend/dist
