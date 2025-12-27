@@ -41,6 +41,7 @@ type FanState struct {
 // PublicState is a simplified, thread-safe representation of the controller's state for the UI.
 type PublicState struct {
 	SystemTemp float64
+	GpuTemp    float64 // Нове поле
 	Fans       []PublicFanState
 	ModelName  string
 }
@@ -62,7 +63,8 @@ type FanController struct {
 	fanStates  []FanState
 	stateMutex sync.RWMutex
 
-	lastTemp float64
+	lastTemp    float64
+	lastGpuTemp float64 // Нове поле для кешування
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -169,11 +171,12 @@ func (fc *FanController) GetPublicState() PublicState {
 	defer fc.stateMutex.RUnlock()
 
 	if fc.config == nil {
-		return PublicState{} // Return empty state if not configured
+		return PublicState{}
 	}
 
 	state := PublicState{
 		SystemTemp: fc.lastTemp,
+		GpuTemp:    fc.lastGpuTemp, // Передаємо на фронт
 		ModelName:  fc.config.ModelName,
 		Fans:       make([]PublicFanState, len(fc.fanStates)),
 	}
@@ -189,6 +192,7 @@ func (fc *FanController) GetPublicState() PublicState {
 	}
 	return state
 }
+
 
 // controlLoop is the heart of the fan controller.
 func (fc *FanController) controlLoop() {
@@ -215,19 +219,31 @@ func (fc *FanController) controlLoop() {
 
 // tick performs a single control cycle.
 func (fc *FanController) tick() {
+	// КРОК 1: Читаємо сенсори БЕЗ блокування м'ютекса!
+	// Це займає час (WMI повільний), але тепер це не блокує UI.
+	temps, err := sensors.GetSystemTemperatures()
+
+	// КРОК 2: Блокуємо м'ютекс тільки для оновлення стану
 	fc.stateMutex.Lock()
 	defer fc.stateMutex.Unlock()
 
-	temp, err := sensors.GetMaxSystemTemperature()
 	if err != nil {
-		log.Printf("Warning: Failed to read temperature: %v. Using last known value.", err)
+		log.Printf("Warning: Failed to read temperature: %v", err)
+		// Продовжуємо зі старими значеннями
 	} else {
-		fc.lastTemp = temp
+		fc.lastTemp = temps.MaxCpuTemp
+		fc.lastGpuTemp = temps.GpuTemp
+	}
+
+	// Використовуємо максимальну температуру для захисту (безпечніше)
+	effectiveTemp := fc.lastTemp
+	if fc.lastGpuTemp > effectiveTemp {
+		effectiveTemp = fc.lastGpuTemp
 	}
 
 	// Safety logic based on settings
-	if fc.lastTemp > float64(fc.settings.CriticalTemp) {
-		log.Printf("CRITICAL: Temperature %.1f°C exceeds threshold of %d°C. Action: %s", fc.lastTemp, fc.settings.CriticalTemp, fc.settings.SafetyAction)
+	if effectiveTemp > float64(fc.settings.CriticalTemp) {
+		log.Printf("CRITICAL: Temperature %.1f°C exceeds threshold of %d°C. Action: %s", effectiveTemp, fc.settings.CriticalTemp, fc.settings.SafetyAction)
 		switch fc.settings.SafetyAction {
 		case "bios_control":
 			fc.releaseAllFansToBios()
@@ -258,22 +274,25 @@ func (fc *FanController) tick() {
 			log.Printf("Error reading fan %d speed: %v", i, err)
 			state.ReadSpeedPercent = -1 // Indicate error
 		} else {
+			// Assuming the read value scales linearly from 0-255 to 0-100%
 			state.ReadSpeedPercent = int(math.Round(float64(rawValue) / 255.0 * 100.0))
 		}
 
 		switch state.Mode {
 		case ModeAuto:
-			targetSpeedPercent = calculateSpeedForTemp(fc.lastTemp, fanConfig.TemperatureThresholds)
+			targetSpeedPercent = calculateSpeedForTemp(effectiveTemp, fanConfig.TemperatureThresholds)
 			state.biosControlReleased = false
 		case ModeManual:
 			targetSpeedPercent = state.ManualSpeed
 			state.biosControlReleased = false
 		case ModeReadOnly:
+			// Only read, do not write.
 			continue
 		case ModeDisabled:
+			// Release control to BIOS if not already done.
 			if !state.biosControlReleased {
 				if fanConfig.ResetRequired {
-					log.Printf("Fan %d (%s): Releasing control to BIOS", i, fanConfig.FanDisplayName)
+					log.Printf("Fan %d (%s): Releasing control to BIOS (writing %d)", i, fanConfig.FanDisplayName, fanConfig.FanSpeedResetValue)
 					fc.ecDriver.Write(fanConfig.WriteRegister, byte(fanConfig.FanSpeedResetValue))
 				}
 				state.biosControlReleased = true

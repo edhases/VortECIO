@@ -22,6 +22,7 @@ export namespace controller {
 	}
 	export class PublicState {
 	    SystemTemp: number;
+	    GpuTemp: number;
 	    Fans: PublicFanState[];
 	    ModelName: string;
 
@@ -32,6 +33,7 @@ export namespace controller {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.SystemTemp = source["SystemTemp"];
+	        this.GpuTemp = source["GpuTemp"];
 	        this.Fans = this.convertValues(source["Fans"], PublicFanState);
 	        this.ModelName = source["ModelName"];
 	    }
@@ -60,11 +62,11 @@ export namespace controller {
 export namespace models {
 
 	export class Settings {
-	    last_config_path: string;
+	    lastConfigPath: string;
 	    language: string;
-	    auto_start: boolean;
-	    critical_temp: number;
-	    safety_action: string;
+	    autoStart: boolean;
+	    criticalTemp: number;
+	    safetyAction: string;
 
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -72,11 +74,11 @@ export namespace models {
 
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.last_config_path = source["last_config_path"];
+	        this.lastConfigPath = source["lastConfigPath"];
 	        this.language = source["language"];
-	        this.auto_start = source["auto_start"];
-	        this.critical_temp = source["critical_temp"];
-	        this.safety_action = source["safety_action"];
+	        this.autoStart = source["autoStart"];
+	        this.criticalTemp = source["criticalTemp"];
+	        this.safetyAction = source["safetyAction"];
 	    }
 	}
 
