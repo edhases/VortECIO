@@ -9,14 +9,12 @@
 
     function handleModeChange(event) {
         const newMode = event.target.value;
-        // No need to update local state, it will be refreshed by the polling `GetState` call in App.svelte
         SetFanMode(fanIndex, newMode)
             .catch(err => console.error(err));
     }
 
     function handleSpeedChange(event) {
         const newSpeed = parseInt(event.target.value, 10);
-        // No need to update local state here either
         SetManualSpeed(fanIndex, newSpeed)
             .catch(err => console.error(err));
     }

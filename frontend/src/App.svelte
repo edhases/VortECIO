@@ -4,7 +4,7 @@
     import FanCard from "./components/FanCard.svelte";
     import SettingsModal from "./components/SettingsModal.svelte";
     import { t, initI18n, setLocale } from './i18n/store.js';
-    import { LoadConfig, GetState, GetSettings, SaveSettings } from "../wailsjs/go/main/App";
+    import { LoadConfig, GetState, GetSettings, SaveAppSettings } from "../wailsjs/go/main/App";
 
     let state = {
         SystemTemp: 0.0,
@@ -37,9 +37,9 @@
     }
 
     function handleSaveSettings() {
-        SaveSettings(settings)
+        SaveAppSettings(settings)
             .then(() => {
-                setLocale(settings.Language); // Update language in UI
+                setLocale(settings.language); // Update language in UI
                 showSettingsModal = false;
             })
             .catch(err => {

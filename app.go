@@ -127,8 +127,8 @@ func (a *App) GetSettings() models.Settings {
 	return a.settings
 }
 
-// SaveSettings saves the provided settings from the frontend.
-func (a *App) SaveSettings(newSettings models.Settings) error {
+// SaveAppSettings saves the provided settings from the frontend.
+func (a *App) SaveAppSettings(newSettings models.Settings) error {
 	a.settings = newSettings
 	a.fanController.UpdateSettings(&a.settings) // Update controller logic
 
