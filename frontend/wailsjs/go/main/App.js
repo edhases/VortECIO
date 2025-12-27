@@ -14,8 +14,8 @@ export function LoadConfig() {
   return window['go']['main']['App']['LoadConfig']();
 }
 
-export function SaveSettings(arg1) {
-  return window['go']['main']['App']['SaveSettings'](arg1);
+export function SaveAppSettings(arg1) {
+  return window['go']['main']['App']['SaveAppSettings'](arg1);
 }
 
 export function SetFanMode(arg1, arg2) {

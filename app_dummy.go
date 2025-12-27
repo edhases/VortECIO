@@ -60,7 +60,7 @@ func (a *App) GetSettings() models.Settings {
 	}
 }
 
-func (a *App) SaveSettings(newSettings models.Settings) error {
-	log.Printf("Dummy SaveSettings called: %+v", newSettings)
+func (a *App) SaveAppSettings(newSettings models.Settings) error {
+	log.Printf("Dummy SaveAppSettings called: %+v", newSettings)
 	return nil
 }

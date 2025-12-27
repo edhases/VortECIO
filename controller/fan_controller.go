@@ -63,8 +63,9 @@ type FanController struct {
 	fanStates  []FanState
 	stateMutex sync.RWMutex
 
-	lastTemp    float64
-	lastGpuTemp float64 // Нове поле для кешування
+	lastTemp                 float64
+	lastGpuTemp              float64 // Нове поле для кешування
+	lastSuccessfulTempUpdate time.Time
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -79,6 +80,7 @@ func NewFanController(driver *hardware.EcDriver) *FanController {
 			CriticalTemp: 80,
 			SafetyAction: "bios_control",
 		},
+		lastSuccessfulTempUpdate: time.Now(), // Initialize to prevent immediate trigger
 	}
 }
 
@@ -97,6 +99,13 @@ func (fc *FanController) LoadConfig(config *models.Config) {
 	defer fc.stateMutex.Unlock()
 
 	fc.Stop() // Stop any previous control loop
+
+	// Pre-sort temperature thresholds for performance
+	for i := range config.FanConfigurations {
+		sort.Slice(config.FanConfigurations[i].TemperatureThresholds, func(j, k int) bool {
+			return config.FanConfigurations[i].TemperatureThresholds[j].UpThreshold < config.FanConfigurations[i].TemperatureThresholds[k].UpThreshold
+		})
+	}
 
 	fc.config = config
 	fc.fanStates = make([]FanState, len(config.FanConfigurations))
@@ -229,10 +238,18 @@ func (fc *FanController) tick() {
 
 	if err != nil {
 		log.Printf("Warning: Failed to read temperature: %v", err)
-		// Продовжуємо зі старими значеннями
+		// Watchdog: if temp data is stale for too long, force high fan speed for safety.
+		if !fc.lastSuccessfulTempUpdate.IsZero() && time.Since(fc.lastSuccessfulTempUpdate) > 20*time.Second {
+			log.Printf("CRITICAL: Temperature data is stale for more than 20s. Forcing fans to 100%.")
+			for i := range fc.fanStates {
+				fc.fanStates[i].Mode = ModeManual
+				fc.fanStates[i].ManualSpeed = 100
+			}
+		}
 	} else {
 		fc.lastTemp = temps.MaxCpuTemp
 		fc.lastGpuTemp = temps.GpuTemp
+		fc.lastSuccessfulTempUpdate = time.Now()
 	}
 
 	// Використовуємо максимальну температуру для захисту (безпечніше)
@@ -326,10 +343,6 @@ func (fc *FanController) releaseAllFansToBios() {
 
 // calculateSpeedForTemp determines the appropriate fan speed for a given temperature.
 func calculateSpeedForTemp(temp float64, thresholds []models.TemperatureThreshold) int {
-	sort.Slice(thresholds, func(i, j int) bool {
-		return thresholds[i].UpThreshold < thresholds[j].UpThreshold
-	})
-
 	speed := 0.0
 	for _, t := range thresholds {
 		if temp >= float64(t.UpThreshold) {
