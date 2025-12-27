@@ -134,7 +134,8 @@ func (a *App) SaveAppSettings(newSettings models.Settings) error {
 
 	if err := a.SetAutoStart(a.settings.AutoStart); err != nil {
 		log.Printf("Error setting auto-start: %v", err)
-		// Don't fail the whole save for this, but log it.
+		// Return the error to the frontend so the user knows something went wrong.
+		return fmt.Errorf("failed to update auto-start setting: %w", err)
 	}
 
 	return a.saveSettingsToFile()
