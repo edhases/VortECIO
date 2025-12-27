@@ -8,6 +8,7 @@
 
     let state = {
         SystemTemp: 0.0,
+        GpuTemp: 0.0,
         Fans: [],
         ModelName: "No Config Loaded"
     };
@@ -35,18 +36,16 @@
         showSettingsModal = true;
     }
 
-    function handleSaveSettings(event) {
-        const newSettings = event.detail;
-        SaveSettings(newSettings)
+    function handleSaveSettings() {
+        SaveSettings(settings)
             .then(() => {
-                settings = newSettings;
-                setLocale(newSettings.Language); // Update language in UI
+                setLocale(settings.Language); // Update language in UI
+                showSettingsModal = false;
             })
             .catch(err => {
                 console.error("Failed to save settings:", err);
                 errorMsg = err;
             });
-        showSettingsModal = false; // Close modal regardless of success
     }
 
     // --- Lifecycle ---
@@ -86,12 +85,13 @@
 </script>
 
 <main>
-    <SettingsModal
-        bind:showModal={showSettingsModal}
-        {settings}
-        on:save={handleSaveSettings}
-        on:close={() => showSettingsModal = false}
-    />
+    {#if showSettingsModal}
+        <SettingsModal
+            bind:settings={settings}
+            on:save={handleSaveSettings}
+            on:close={() => showSettingsModal = false}
+        />
+    {/if}
 
     <div class="top-bar">
         <h1>{$t.app_title}</h1>
@@ -100,7 +100,11 @@
             <button on:click={openSettings}>{$t.settings_btn}</button>
         </div>
     </div>
-    <Statusbar modelName={state.ModelName} systemTempLabel={$t.system_temp} systemTemp={state.SystemTemp.toFixed(1)} />
+    <Statusbar
+        modelName={state.ModelName}
+        systemTemp={state.SystemTemp.toFixed(1)}
+        gpuTemp={state.GpuTemp}
+    />
 
     <div class="content">
         {#if errorMsg}

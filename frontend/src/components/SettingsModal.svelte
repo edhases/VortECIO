@@ -1,37 +1,19 @@
 <script>
     import { createEventDispatcher } from 'svelte';
-    import { t, locale } from '../i18n/store.js';
+    import { t } from '../i18n/store.js';
 
-    export let showModal = false;
     export let settings = {};
 
     const dispatch = createEventDispatcher();
-
-    let localSettings = { ...settings };
-
-    function handleSave() {
-        dispatch('save', localSettings);
-    }
-
-    function handleCancel() {
-        localSettings = { ...settings }; // Reset changes
-        dispatch('close');
-    }
-
-    // Update local copy if the main settings object changes from outside
-    $: if (settings) {
-        localSettings = { ...settings };
-    }
 </script>
 
-{#if showModal}
 <div class="modal-backdrop">
     <div class="modal">
         <h2>{$t.settings_title}</h2>
 
         <div class="form-group">
             <label for="language">{$t.lang_label}</label>
-            <select id="language" bind:value={localSettings.Language}>
+            <select id="language" bind:value={settings.language}>
                 <option value="en">English</option>
                 <option value="ua">Українська</option>
             </select>
@@ -39,29 +21,28 @@
 
         <div class="form-group">
             <label for="autostart">{$t.autostart_label}</label>
-            <input type="checkbox" id="autostart" bind:checked={localSettings.AutoStart} />
+            <input type="checkbox" id="autostart" bind:checked={settings.autoStart} />
         </div>
 
         <div class="form-group">
             <label for="critical-temp">{$t.critical_temp_label}</label>
-            <input type="number" id="critical-temp" bind:value={localSettings.CriticalTemp} min="70" max="100" />
+            <input type="number" id="critical-temp" bind:value={settings.criticalTemp} min="70" max="100" />
         </div>
 
         <div class="form-group">
             <label for="safety-action">{$t.safety_action_label}</label>
-            <select id="safety-action" bind:value={localSettings.SafetyAction}>
+            <select id="safety-action" bind:value={settings.safetyAction}>
                 <option value="bios_control">{$t.action_bios}</option>
                 <option value="force_full_speed">{$t.action_max}</option>
             </select>
         </div>
 
         <div class="modal-actions">
-            <button on:click={handleSave}>{$t.save_btn}</button>
-            <button on:click={handleCancel} class="cancel-btn">{$t.cancel_btn}</button>
+            <button on:click={() => dispatch('save')}>{$t.save_btn}</button>
+            <button on:click={() => dispatch('close')} class="cancel-btn">{$t.cancel_btn}</button>
         </div>
     </div>
 </div>
-{/if}
 
 <style>
     .modal-backdrop {
