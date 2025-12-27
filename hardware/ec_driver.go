@@ -112,6 +112,33 @@ func (d *EcDriver) Write(register int, value byte) error {
 	return nil
 }
 
+// ReadWord reads a 16-bit value from two consecutive registers.
+// This is used for RPM values which are typically larger than 255.
+// It assumes Little Endian byte order (Low Byte at `register`, High Byte at `register+1`).
+func (d *EcDriver) ReadWord(register int) (int, error) {
+	// Read the low byte
+	low, err := d.Read(register)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read low byte for word at register %d: %w", register, err)
+	}
+
+	// Read the high byte from the next register
+	high, err := d.Read(register + 1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read high byte for word at register %d: %w", register+1, err)
+	}
+
+	// Combine High Byte and Low Byte: (High * 256) + Low
+	value := int(high)<<8 | int(low)
+	return value, nil
+}
+
+// Close is a placeholder to satisfy the ECDriver interface.
+// The underlying DLL does not require explicit closing in this implementation.
+func (d *EcDriver) Close() {
+	// No operation needed.
+}
+
 // waitIBF waits for the Input Buffer Full bit to clear (become 0).
 // This indicates the EC is ready to accept a command or data.
 func (d *EcDriver) waitIBF() error {

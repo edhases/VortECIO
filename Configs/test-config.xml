@@ -1,0 +1,31 @@
+<FanControlConfigV2>
+    <NotebookModel>Test Model</NotebookModel>
+    <Author>Jules</Author>
+    <EcPollInterval>1000</EcPollInterval>
+    <ReadWriteWords>false</ReadWriteWords>
+    <CriticalTemperature>90</CriticalTemperature>
+    <FanConfigurations>
+        <FanConfiguration>
+            <ReadRegister>80</ReadRegister>
+            <WriteRegister>81</WriteRegister>
+            <RpmRegister>82</RpmRegister>
+            <MinSpeedValue>0</MinSpeedValue>
+            <MaxSpeedValue>100</MaxSpeedValue>
+            <ResetRequired>true</ResetRequired>
+            <FanSpeedResetValue>0</FanSpeedResetValue>
+            <FanDisplayName>CPU Fan</FanDisplayName>
+            <TemperatureThresholds>
+                <TemperatureThreshold>
+                    <UpThreshold>50</UpThreshold>
+                    <DownThreshold>45</DownThreshold>
+                    <FanSpeed>50</FanSpeed>
+                </TemperatureThreshold>
+                <TemperatureThreshold>
+                    <UpThreshold>70</UpThreshold>
+                    <DownThreshold>65</DownThreshold>
+                    <FanSpeed>100</FanSpeed>
+                </TemperatureThreshold>
+            </TemperatureThresholds>
+        </FanConfiguration>
+    </FanConfigurations>
+</FanControlConfigV2>
