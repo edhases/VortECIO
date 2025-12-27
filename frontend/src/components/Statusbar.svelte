@@ -1,12 +1,14 @@
 <script>
-    export let modelName = "No Config Loaded";
+    export let modelName = "Loading...";
     export let systemTemp = "N/A";
+    export let systemTempLabel = "System Temp";
 </script>
 
 <div class="statusbar">
-    <div class="model-name">{modelName}</div>
-    <div class="temperature">
-        System Temp: <span>{systemTemp}°C</span>
+    <span class="model-name">{modelName}</span>
+    <div class="temp-display">
+        <span>{systemTempLabel}: </span>
+        <span class="temp-value">{systemTemp}°C</span>
     </div>
 </div>
 
@@ -16,18 +18,22 @@
         justify-content: space-between;
         align-items: center;
         padding: 8px 16px;
-        background-color: #2a3a4a;
-        color: #e0e0e0;
+        background-color: #2c3e50;
         border-bottom: 1px solid #445566;
-        font-size: 14px;
     }
 
     .model-name {
         font-weight: bold;
+        color: #bdc3c7;
     }
 
-    .temperature span {
+    .temp-display {
+        font-size: 14px;
+        color: #ecf0f1;
+    }
+
+    .temp-value {
         font-weight: bold;
-        color: #61afef; /* A light blue accent */
+        color: #61afef;
     }
 </style>

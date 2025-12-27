@@ -1,0 +1,22 @@
+{
+  "app_title": "VortECIO-Go",
+  "load_config": "Завантажити конфіг",
+  "settings_btn": "Налаштування",
+  "system_temp": "Температура системи",
+  "no_config": "Будь ласка, завантажте файл конфігурації NBFC, щоб почати.",
+  "fan_header": "Вентилятор",
+  "mode_label": "Режим",
+  "speed_label": "Ручна швидкість",
+  "mode_auto": "Авто",
+  "mode_manual": "Ручний",
+  "mode_disabled": "Вимкнено",
+  "settings_title": "Налаштування програми",
+  "lang_label": "Мова",
+  "autostart_label": "Запускати при старті",
+  "critical_temp_label": "Критична темп. (°C)",
+  "safety_action_label": "Дія при перегріві",
+  "action_bios": "Віддати контроль BIOS",
+  "action_max": "Примусово 100%",
+  "save_btn": "Зберегти",
+  "cancel_btn": "Скасувати"
+}

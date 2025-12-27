@@ -1,3 +1,5 @@
+//go:build windows
+
 package main
 
 import (
@@ -13,6 +15,7 @@ import (
 	"path/filepath"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.org/x/sys/windows/registry"
 )
 
 // App struct holds the application's state and dependencies.
@@ -20,12 +23,8 @@ type App struct {
 	ctx           context.Context
 	ecDriver      *hardware.EcDriver
 	fanController *controller.FanController
+	settings      models.Settings
 	settingsPath  string
-}
-
-// Settings struct for storing application settings like the last config path.
-type Settings struct {
-	LastConfigPath string `json:"last_config_path"`
 }
 
 // NewApp creates a new App application struct.
@@ -44,6 +43,20 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.settingsPath = filepath.Join(filepath.Dir(exePath), "settings.json")
 
+	// Load settings or create default
+	if err := a.loadSettings(); err != nil {
+		log.Printf("Could not load settings, creating default: %v", err)
+		a.settings = models.Settings{
+			Language:     "en",
+			AutoStart:    false,
+			CriticalTemp: 80,
+			SafetyAction: "bios_control",
+		}
+		// Try to save the new default settings
+		if err := a.saveSettingsToFile(); err != nil {
+			log.Printf("Warning: failed to save default settings: %v", err)
+		}
+	}
 
 	// Initialize the EC driver
 	driver, err := hardware.NewEcDriver()
@@ -57,10 +70,16 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.ecDriver = driver
 	a.fanController = controller.NewFanController(a.ecDriver)
+	a.fanController.UpdateSettings(&a.settings) // Pass initial settings to controller
 
 	// Try to auto-load last config
-	if err := a.loadLastConfig(); err != nil {
-		log.Printf("Could not auto-load last config: %v", err)
+	if a.settings.LastConfigPath != "" {
+		log.Printf("Found last config path: %s", a.settings.LastConfigPath)
+		if _, err := os.Stat(a.settings.LastConfigPath); err == nil {
+			a.loadConfigFile(a.settings.LastConfigPath)
+		} else {
+			log.Printf("Warning: last config file not found at %s", a.settings.LastConfigPath)
+		}
 	}
 }
 
@@ -103,6 +122,24 @@ func (a *App) SetManualSpeed(fanIndex int, speed int) error {
 	return a.fanController.SetManualSpeed(fanIndex, speed)
 }
 
+// GetSettings returns the current application settings to the frontend.
+func (a *App) GetSettings() models.Settings {
+	return a.settings
+}
+
+// SaveSettings saves the provided settings from the frontend.
+func (a *App) SaveSettings(newSettings models.Settings) error {
+	a.settings = newSettings
+	a.fanController.UpdateSettings(&a.settings) // Update controller logic
+
+	if err := a.SetAutoStart(a.settings.AutoStart); err != nil {
+		log.Printf("Error setting auto-start: %v", err)
+		// Don't fail the whole save for this, but log it.
+	}
+
+	return a.saveSettingsToFile()
+}
+
 // --- Helper methods ---
 
 func (a *App) loadConfigFile(path string) (controller.PublicState, error) {
@@ -120,7 +157,8 @@ func (a *App) loadConfigFile(path string) (controller.PublicState, error) {
 	a.fanController.Start()
 
 	// Save the path for next launch
-	if err := a.saveSettings(Settings{LastConfigPath: path}); err != nil {
+	a.settings.LastConfigPath = path
+	if err := a.saveSettingsToFile(); err != nil {
 		log.Printf("Warning: failed to save settings: %v", err)
 	}
 
@@ -128,40 +166,41 @@ func (a *App) loadConfigFile(path string) (controller.PublicState, error) {
 	return a.fanController.GetPublicState(), nil
 }
 
-func (a *App) loadLastConfig() error {
-	settings, err := a.loadSettings()
-	if err != nil {
-		return err // Could not read settings file
-	}
-
-	if settings.LastConfigPath != "" {
-		log.Printf("Found last config path: %s", settings.LastConfigPath)
-		// Check if file exists before trying to load
-		if _, err := os.Stat(settings.LastConfigPath); err == nil {
-			_, err := a.loadConfigFile(settings.LastConfigPath)
-			return err
-		}
-		return fmt.Errorf("last config file not found at %s", settings.LastConfigPath)
-	}
-
-	return nil // No last config path saved
-}
-
-
-func (a *App) loadSettings() (Settings, error) {
-	var settings Settings
+func (a *App) loadSettings() error {
 	data, err := os.ReadFile(a.settingsPath)
 	if err != nil {
-		return settings, err
+		return err
 	}
-	err = json.Unmarshal(data, &settings)
-	return settings, err
+	return json.Unmarshal(data, &a.settings)
 }
 
-func (a *App) saveSettings(settings Settings) error {
-	data, err := json.MarshalIndent(settings, "", "  ")
+func (a *App) saveSettingsToFile() error {
+	data, err := json.MarshalIndent(a.settings, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(a.settingsPath, data, 0644)
+}
+
+// SetAutoStart adds or removes the application from the Windows startup registry.
+func (a *App) SetAutoStart(enabled bool) error {
+	const appName = "VortECIO-Go"
+	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE|registry.QUERY_VALUE)
+	if err != nil {
+		return fmt.Errorf("failed to open registry key: %w", err)
+	}
+	defer key.Close()
+
+	if enabled {
+		exePath, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("failed to get executable path: %w", err)
+		}
+		// Set the value to the path of the executable, enclosed in quotes.
+		return key.SetStringValue(appName, fmt.Sprintf(`"%s"`, exePath))
+	}
+
+	// If not enabled, delete the key.
+	// It's safe to call DeleteValue even if the value doesn't exist.
+	return key.DeleteValue(appName)
 }

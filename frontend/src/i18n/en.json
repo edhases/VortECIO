@@ -1,0 +1,22 @@
+{
+  "app_title": "VortECIO-Go",
+  "load_config": "Load Config",
+  "settings_btn": "Settings",
+  "system_temp": "System Temp",
+  "no_config": "Please load an NBFC configuration file to begin.",
+  "fan_header": "Fan",
+  "mode_label": "Mode",
+  "speed_label": "Manual Speed",
+  "mode_auto": "Auto",
+  "mode_manual": "Manual",
+  "mode_disabled": "Disabled",
+  "settings_title": "Application Settings",
+  "lang_label": "Language",
+  "autostart_label": "Run on Startup",
+  "critical_temp_label": "Critical Temp (°C)",
+  "safety_action_label": "Safety Action",
+  "action_bios": "Release to BIOS",
+  "action_max": "Force 100% Speed",
+  "save_btn": "Save",
+  "cancel_btn": "Cancel"
+}

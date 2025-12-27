@@ -1,22 +1,32 @@
 <script>
     import { SetFanMode, SetManualSpeed } from "../../wailsjs/go/main/App";
+    import { t } from '../i18n/store.js';
 
     export let fan = {};
     export let fanIndex = 0;
 
-    let modes = ["Auto", "Manual", "Disabled"]; // "Read-only" mode is excluded for simplicity
+    let modes = ["Auto", "Manual", "Disabled"];
 
     function handleModeChange(event) {
         const newMode = event.target.value;
+        // No need to update local state, it will be refreshed by the polling `GetState` call in App.svelte
         SetFanMode(fanIndex, newMode)
             .catch(err => console.error(err));
     }
 
     function handleSpeedChange(event) {
         const newSpeed = parseInt(event.target.value, 10);
+        // No need to update local state here either
         SetManualSpeed(fanIndex, newSpeed)
             .catch(err => console.error(err));
     }
+
+    // A map to get translated mode names
+    const modeTranslations = {
+        "Auto": $t.mode_auto,
+        "Manual": $t.mode_manual,
+        "Disabled": $t.mode_disabled,
+    };
 </script>
 
 <div class="fan-card">
@@ -25,22 +35,22 @@
     </div>
     <div class="fan-controls">
         <div class="control-group">
-            <label for="mode-select-{fanIndex}">Mode:</label>
-            <select id="mode-select-{fanIndex}" bind:value={fan.Mode} on:change={handleModeChange}>
+            <label for="mode-select-{fanIndex}">{$t.mode_label}:</label>
+            <select id="mode-select-{fanIndex}" value={fan.Mode} on:change={handleModeChange}>
                 {#each modes as mode}
-                    <option value={mode}>{mode}</option>
+                    <option value={mode}>{modeTranslations[mode] || mode}</option>
                 {/each}
             </select>
         </div>
 
         <div class="control-group slider-group">
-            <label for="speed-slider-{fanIndex}">Manual Speed:</label>
+            <label for="speed-slider-{fanIndex}">{$t.speed_label}:</label>
             <input
                 type="range"
                 id="speed-slider-{fanIndex}"
                 min="0"
                 max="100"
-                bind:value={fan.ManualSpeed}
+                value={fan.ManualSpeed}
                 on:input={handleSpeedChange}
                 disabled={fan.Mode !== 'Manual'}
             />
