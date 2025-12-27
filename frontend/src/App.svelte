@@ -2,15 +2,20 @@
     import { onMount } from "svelte";
     import Statusbar from "./components/Statusbar.svelte";
     import FanCard from "./components/FanCard.svelte";
-    import { LoadConfig, GetState } from "../wailsjs/go/main/App";
+    import SettingsModal from "./components/SettingsModal.svelte";
+    import { t, initI18n, setLocale } from './i18n/store.js';
+    import { LoadConfig, GetState, GetSettings, SaveSettings } from "../wailsjs/go/main/App";
 
     let state = {
         SystemTemp: 0.0,
         Fans: [],
         ModelName: "No Config Loaded"
     };
+    let settings = {};
     let errorMsg = "";
+    let showSettingsModal = false;
 
+    // --- Core App Logic ---
     function handleLoadConfig() {
         errorMsg = "";
         LoadConfig()
@@ -25,8 +30,35 @@
             });
     }
 
-    // Poll for state updates
+    // --- Settings Modal Logic ---
+    function openSettings() {
+        showSettingsModal = true;
+    }
+
+    function handleSaveSettings(event) {
+        const newSettings = event.detail;
+        SaveSettings(newSettings)
+            .then(() => {
+                settings = newSettings;
+                setLocale(newSettings.Language); // Update language in UI
+            })
+            .catch(err => {
+                console.error("Failed to save settings:", err);
+                errorMsg = err;
+            });
+        showSettingsModal = false; // Close modal regardless of success
+    }
+
+    // --- Lifecycle ---
     onMount(() => {
+        // Initialize localization
+        initI18n();
+
+        // Load initial settings from backend
+        GetSettings().then(loadedSettings => {
+            settings = loadedSettings;
+        });
+
         // Initial state load
         GetState().then(newState => {
             if(newState.ModelName) {
@@ -34,6 +66,7 @@
             }
         });
 
+        // Polling for state updates
         const interval = setInterval(() => {
             GetState()
                 .then(newState => {
@@ -45,7 +78,7 @@
                     console.error("Failed to get state:", err);
                     clearInterval(interval); // Stop polling on error
                 });
-        }, 1000); // Poll every second
+        }, 1000);
 
         return () => clearInterval(interval);
     });
@@ -53,11 +86,21 @@
 </script>
 
 <main>
+    <SettingsModal
+        bind:showModal={showSettingsModal}
+        {settings}
+        on:save={handleSaveSettings}
+        on:close={() => showSettingsModal = false}
+    />
+
     <div class="top-bar">
-        <h1>VortECIO-Go</h1>
-        <button on:click={handleLoadConfig}>Load Config</button>
+        <h1>{$t.app_title}</h1>
+        <div>
+            <button on:click={handleLoadConfig}>{$t.load_config}</button>
+            <button on:click={openSettings}>{$t.settings_btn}</button>
+        </div>
     </div>
-    <Statusbar modelName={state.ModelName} systemTemp={state.SystemTemp.toFixed(1)} />
+    <Statusbar modelName={state.ModelName} systemTempLabel={$t.system_temp} systemTemp={state.SystemTemp.toFixed(1)} />
 
     <div class="content">
         {#if errorMsg}
@@ -66,11 +109,11 @@
 
         {#if state.Fans && state.Fans.length > 0}
             {#each state.Fans as fan, i}
-                <FanCard fan={fan} fanIndex={i} bind:fan.Mode bind:fan.ManualSpeed />
+                <FanCard {fan} fanIndex={i} />
             {/each}
         {:else}
             <div class="no-config">
-                <p>Please load an NBFC configuration file to begin.</p>
+                <p>{$t.no_config}</p>
             </div>
         {/if}
     </div>
@@ -96,6 +139,11 @@
         align-items: center;
         padding: 8px 16px;
         background-color: #34495e;
+    }
+
+    .top-bar div {
+        display: flex;
+        gap: 10px;
     }
 
     h1 {

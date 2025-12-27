@@ -1,3 +1,5 @@
+//go:build windows
+
 package sensors
 
 import (
@@ -20,7 +22,7 @@ func GetMaxSystemTemperature() (float64, error) {
 	// The query to get temperature values. Note the namespace `root\wmi`.
 	query := "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"
 
-	err := wmi.Query(query, &dst)
+	err := wmi.QueryNamespace(query, &dst, "root\\wmi")
 	if err != nil {
 		return 0, fmt.Errorf("WMI query failed: %w. This may happen on systems without WMI support or if run without admin privileges", err)
 	}
