@@ -18,5 +18,7 @@
   "action_bios": "Віддати контроль BIOS",
   "action_max": "Примусово 100%",
   "save_btn": "Зберегти",
-  "cancel_btn": "Скасувати"
+  "cancel_btn": "Скасувати",
+  "dashboard_tab": "Панель",
+  "system_info_tab": "Інфо системи"
 }

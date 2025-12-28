@@ -3,8 +3,10 @@
     import Statusbar from "./components/Statusbar.svelte";
     import FanCard from "./components/FanCard.svelte";
     import SettingsModal from "./components/SettingsModal.svelte";
+    import SystemSpecs from "./components/SystemSpecs.svelte";
     import { t, initI18n, setLocale } from './i18n/store.js';
     import { LoadConfig, GetState, GetSettings, SaveAppSettings } from "../wailsjs/go/main/App";
+    import { EventsOn } from "../wailsjs/runtime/runtime";
 
     let state = {
         SystemTemp: 0.0,
@@ -15,6 +17,8 @@
     let settings = {};
     let errorMsg = "";
     let showSettingsModal = false;
+    let activeTab = 'Dashboard'; // 'Dashboard' or 'System Info'
+    let systemInfo = {}; // To store data from the sidecar
 
     // --- Core App Logic ---
     function handleLoadConfig() {
@@ -65,11 +69,27 @@
             }
         });
 
-        // Polling for state updates
+        // Listen for systemInfo events from the Go backend
+        EventsOn("systemInfo", newInfo => {
+            systemInfo = newInfo;
+            // Also update temperatures in the main state for the status bar
+            if (newInfo.cpu && newInfo.cpu.packageTemp > 0) {
+                state.SystemTemp = newInfo.cpu.packageTemp;
+            }
+            if (newInfo.gpu && newInfo.gpu.temp > 0) {
+                state.GpuTemp = newInfo.gpu.temp;
+            }
+        });
+
+        // Polling for fan state updates (Mode, ManualSpeed, etc.)
+        // We still need this to get user interactions reflected
         const interval = setInterval(() => {
             GetState()
                 .then(newState => {
                     if(newState.ModelName) {
+                       // Keep the temperatures from the event, but update the fan details
+                       newState.SystemTemp = state.SystemTemp;
+                       newState.GpuTemp = state.GpuTemp;
                        state = newState;
                     }
                 })
@@ -106,19 +126,34 @@
         gpuTemp={state.GpuTemp}
     />
 
+    <div class="tabs">
+        <button class:active={activeTab === 'Dashboard'} on:click={() => activeTab = 'Dashboard'}>
+            {$t.dashboard_tab}
+        </button>
+        <button class:active={activeTab === 'System Info'} on:click={() => activeTab = 'System Info'}>
+            {$t.system_info_tab}
+        </button>
+    </div>
+
     <div class="content">
         {#if errorMsg}
             <div class="error">{errorMsg}</div>
         {/if}
 
-        {#if state.Fans && state.Fans.length > 0}
-            {#each state.Fans as fan, i}
-                <FanCard {fan} fanIndex={i} />
-            {/each}
-        {:else}
-            <div class="no-config">
-                <p>{$t.no_config}</p>
-            </div>
+        {#if activeTab === 'Dashboard'}
+            {#if state.Fans && state.Fans.length > 0}
+                {#each state.Fans as fan, i}
+                    <FanCard {fan} fanIndex={i} />
+                {/each}
+            {:else}
+                <div class="no-config">
+                    <p>{$t.no_config}</p>
+                </div>
+            {/if}
+        {/if}
+
+        {#if activeTab === 'System Info'}
+            <SystemSpecs bind:systemInfo={systemInfo} />
         {/if}
     </div>
 </main>
@@ -167,6 +202,29 @@
     button:hover {
         background-color: #7abfff;
     }
+
+    .tabs {
+        display: flex;
+        background-color: #2c3e50;
+    }
+
+    .tabs button {
+        background-color: transparent;
+        color: #ecf0f1;
+        padding: 10px 20px;
+        border-radius: 0;
+        border: none;
+        border-bottom: 3px solid transparent;
+    }
+
+    .tabs button.active {
+        border-bottom: 3px solid #61afef;
+        font-weight: bold;
+    }
+    .tabs button:hover {
+        background-color: #34495e;
+    }
+
 
     .content {
         padding: 16px;

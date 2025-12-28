@@ -6,6 +6,7 @@ import (
 	"VortECIO-Go/controller"
 	"VortECIO-Go/hardware"
 	"VortECIO-Go/models"
+	"VortECIO-Go/services"
 	"VortECIO-Go/utils" // Import the new utils package
 	"context"
 	"encoding/json"
@@ -14,19 +15,20 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows/registry"
-	"github.com/energye/systray"
 )
 
 // App struct holds the application's state and dependencies.
 type App struct {
-	ctx            context.Context
-	ecDriver       hardware.ECDriver
-	fanController  *controller.FanController
-	settings       models.Settings
-	settingsPath   string
-	userProfiles   models.UserProfiles
+	ctx              context.Context
+	ecDriver         hardware.ECDriver
+	fanController    *controller.FanController
+	monitorService   *services.MonitorService
+	settings         models.Settings
+	settingsPath     string
+	userProfiles     models.UserProfiles
 	userProfilesPath string
 }
 
@@ -40,14 +42,14 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	go a.runSysTray()
 
-	// Determine settings path
-	exePath, err := os.Executable()
+	// Determine paths
+	baseDir, err := utils.GetBaseDir()
 	if err != nil {
-		log.Printf("Warning: could not determine executable path: %v", err)
+		log.Fatalf("Fatal: Could not determine base directory: %v", err)
 	}
-	baseDir := filepath.Dir(exePath)
 	a.settingsPath = filepath.Join(baseDir, "settings.json")
 	a.userProfilesPath = filepath.Join(baseDir, "user_profiles.json")
+	sidecarPath := filepath.Join(baseDir, "VortSensors.exe")
 
 	// Load settings or create default
 	if err := a.loadSettings(); err != nil {
@@ -81,8 +83,21 @@ func (a *App) startup(ctx context.Context) {
 		os.Exit(1)
 	}
 	a.ecDriver = driver
-	a.fanController = controller.NewFanController(a, a.ecDriver)
+	a.fanController = controller.NewFanController(a.ctx, a.ecDriver, a.UpdateTrayTooltip)
 	a.fanController.UpdateSettings(&a.settings) // Pass initial settings to controller
+
+	// Initialize and start the monitor service
+	a.monitorService = services.NewMonitorService(sidecarPath)
+	a.monitorService.OnData = func(info services.SystemInfo) {
+		// Pass temperatures to fan controller
+		a.fanController.UpdateTemperatures(info.CPU.PackageTemp, info.GPU.Temp)
+		// Emit full data to the frontend
+		runtime.EventsEmit(a.ctx, "systemInfo", info)
+	}
+	a.monitorService.OnError = func(err error) {
+		log.Printf("Monitor service error: %v. Activating fallback.", err)
+		a.fanController.SetSensorSource(controller.SensorSourceWMI)
+	}
 
 	// Try to auto-load last config
 	if a.settings.LastConfigPath != "" {
@@ -93,12 +108,20 @@ func (a *App) startup(ctx context.Context) {
 			log.Printf("Warning: last config file not found at %s", a.settings.LastConfigPath)
 		}
 	}
+
+	// Start sensor monitoring after config is loaded and controller is ready
+	a.monitorService.Start()
 }
 
 // shutdown is called when the app is closing.
 func (a *App) shutdown(ctx context.Context) {
 	log.Println("Shutting down...")
-	a.fanController.Stop()
+	if a.monitorService != nil {
+		a.monitorService.Stop()
+	}
+	if a.fanController != nil {
+		a.fanController.Stop()
+	}
 }
 
 // LoadConfig opens a file dialog for the user to select an NBFC config file.
@@ -325,15 +348,18 @@ func (a *App) onSysTrayReady() {
 	mShow := systray.AddMenuItem("Show", "Show the main window")
 	mQuit := systray.AddMenuItem("Quit", "Quit the application")
 
-	// Use SetOnClick with callbacks, which is the correct API for energye/systray.
-	// The event loop is handled internally by systray.Run.
-	mShow.SetOnClick(func() {
-		runtime.Show(a.ctx)
-	})
-
-	mQuit.SetOnClick(func() {
-		runtime.Quit(a.ctx)
-	})
+	// Handle menu item clicks in a separate goroutine
+	go func() {
+		for {
+			select {
+			case <-mShow.ClickedCh:
+				runtime.Show(a.ctx)
+			case <-mQuit.ClickedCh:
+				runtime.Quit(a.ctx)
+				return // Exit the goroutine
+			}
+		}
+	}()
 }
 
 // onSysTrayExit is called when the systray is exiting.

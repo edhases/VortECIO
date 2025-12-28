@@ -32,7 +32,7 @@ func (a *App) LoadConfig() (controller.PublicState, error) {
 func (a *App) GetState() controller.PublicState {
 	// Return a mock state so the UI can render something.
 	return controller.PublicState{
-		ModelName: "Dummy Model (Non-Windows)",
+		ModelName:  "Dummy Model (Non-Windows)",
 		SystemTemp: 42.0,
 		Fans: []controller.PublicFanState{
 			{Name: "CPU Fan", Mode: "Auto", ManualSpeed: 50, ReadSpeedPercent: 35, TargetSpeedPercent: 35},

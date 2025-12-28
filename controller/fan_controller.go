@@ -25,21 +25,21 @@ const (
 
 // SettingsSnapshot holds a copy of the main app settings relevant to the controller.
 type SettingsSnapshot struct {
-	CriticalTemp              int
-	SafetyAction              string
+	CriticalTemp               int
+	SafetyAction               string
 	EnableCriticalTempRecovery bool
-	CriticalTempRecoveryDelta int
+	CriticalTempRecoveryDelta  int
 }
 
 // FanState represents the current runtime state of a single fan.
 type FanState struct {
-	Mode               FanMode
-	ManualSpeed        int // User-set percentage (0-100) for Manual mode
-	TargetSpeedPercent int // The speed calculated by the fan curve
-	CurrentSpeed       int // The smoothed speed being written to the EC
-	ReadSpeedPercent   int // Speed percentage read back from the EC
-	CurrentRPM         int // Actual RPM read from the sensor
-	LastValidRPM       int // Used for spike filter
+	Mode                FanMode
+	ManualSpeed         int // User-set percentage (0-100) for Manual mode
+	TargetSpeedPercent  int // The speed calculated by the fan curve
+	CurrentSpeed        int // The smoothed speed being written to the EC
+	ReadSpeedPercent    int // Speed percentage read back from the EC
+	CurrentRPM          int // Actual RPM read from the sensor
+	LastValidRPM        int // Used for spike filter
 	biosControlReleased bool
 }
 
@@ -52,14 +52,22 @@ type PublicState struct {
 }
 
 type PublicFanState struct {
-	Name                  string                   `json:"name"`
-	Mode                  FanMode                  `json:"mode"`
-	ManualSpeed           int                      `json:"manualSpeed"`
-	TargetSpeedPercent    int                      `json:"targetSpeedPercent"`
-	ReadSpeedPercent      int                      `json:"readSpeedPercent"`
-	CurrentRPM            int                      `json:"currentRpm"`
+	Name                  string                        `json:"name"`
+	Mode                  FanMode                       `json:"mode"`
+	ManualSpeed           int                           `json:"manualSpeed"`
+	TargetSpeedPercent    int                           `json:"targetSpeedPercent"`
+	ReadSpeedPercent      int                           `json:"readSpeedPercent"`
+	CurrentRPM            int                           `json:"currentRpm"`
 	TemperatureThresholds []models.TemperatureThreshold `json:"temperatureThresholds"`
 }
+
+// SensorSource defines the origin of temperature data.
+type SensorSource string
+
+const (
+	SensorSourceSidecar SensorSource = "Sidecar"
+	SensorSourceWMI     SensorSource = "WMI"
+)
 
 // AppController defines the interface for the main application controller.
 type AppController interface {
@@ -68,29 +76,29 @@ type AppController interface {
 
 // FanController manages the core fan control logic in a separate goroutine.
 type FanController struct {
-	app      AppController     // Reference to the main app to call methods like UpdateTrayTooltip
-	ecDriver hardware.ECDriver // Use the interface
-	config   *models.Config
-	settings SettingsSnapshot
-
+	ecDriver       hardware.ECDriver // Use the interface
+	config         *models.Config
+	settings       SettingsSnapshot
+	sensorSource   SensorSource
+	onTempUpdate   func(tooltip string) // Callback to update UI elements like tray tooltip
 	fanStates      []FanState
 	inCriticalState bool // Flag to track if we are in a critical temp state
 	stateMutex     sync.RWMutex
-
-	lastTemp                 float64
-	lastGpuTemp              float64 // Нове поле для кешування
+	lastTemp       float64
+	lastGpuTemp    float64
 	lastSuccessfulTempUpdate time.Time
-
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
 }
 
 // NewFanController creates a new, uninitialized fan controller.
-func NewFanController(app AppController, driver hardware.ECDriver) *FanController {
+func NewFanController(ctx context.Context, driver hardware.ECDriver, onTempUpdate func(tooltip string)) *FanController {
 	return &FanController{
-		app:      app,
-		ecDriver: driver,
+		ctx:            ctx,
+		ecDriver:       driver,
+		onTempUpdate:   onTempUpdate,
+		sensorSource:   SensorSourceSidecar, // Default to the new sidecar
 		settings: SettingsSnapshot{ // Default safety settings
 			CriticalTemp: 80,
 			SafetyAction: "bios_control",
@@ -139,7 +147,9 @@ func (fc *FanController) LoadConfig(config *models.Config) {
 	if fc.lastGpuTemp > 0 {
 		tooltip += fmt.Sprintf(" | GPU: %.1f°C", fc.lastGpuTemp)
 	}
-	fc.app.UpdateTrayTooltip(tooltip)
+	if fc.onTempUpdate != nil {
+		fc.onTempUpdate(tooltip)
+	}
 }
 
 // Start launches the main control loop in a background goroutine.
@@ -206,6 +216,31 @@ func (fc *FanController) GetConfig() *models.Config {
 	return fc.config
 }
 
+// SetSensorSource safely switches the temperature data source.
+func (fc *FanController) SetSensorSource(source SensorSource) {
+	fc.stateMutex.Lock()
+	defer fc.stateMutex.Unlock()
+	if fc.sensorSource != source {
+		log.Printf("Switching sensor source from %s to %s", fc.sensorSource, source)
+		fc.sensorSource = source
+		// Reset last update time to allow WMI to fetch immediately
+		fc.lastSuccessfulTempUpdate = time.Time{}
+	}
+}
+
+// UpdateTemperatures is called by the MonitorService to push new temperature data.
+func (fc *FanController) UpdateTemperatures(cpuTemp, gpuTemp float32) {
+	fc.stateMutex.Lock()
+	defer fc.stateMutex.Unlock()
+
+	// This method should only be active if the source is the sidecar
+	if fc.sensorSource == SensorSourceSidecar {
+		fc.lastTemp = float64(cpuTemp)
+		fc.lastGpuTemp = float64(gpuTemp)
+		fc.lastSuccessfulTempUpdate = time.Now()
+	}
+}
+
 // GetPublicState returns a thread-safe snapshot of the current state for UI rendering.
 func (fc *FanController) GetPublicState() PublicState {
 	fc.stateMutex.RLock()
@@ -236,7 +271,6 @@ func (fc *FanController) GetPublicState() PublicState {
 	return state
 }
 
-
 // controlLoop is the heart of the fan controller.
 func (fc *FanController) controlLoop() {
 	defer fc.wg.Done()
@@ -262,27 +296,43 @@ func (fc *FanController) controlLoop() {
 
 // tick performs a single control cycle.
 func (fc *FanController) tick() {
-	// Step 1: Read sensors without locking the mutex to avoid blocking the UI.
-	temps, err := sensors.GetSystemTemperatures()
+	// Step 1: Handle temperature reading based on the current source.
+	// WMI is polled, Sidecar data is pushed.
+	if fc.sensorSource == SensorSourceWMI {
+		temps, err := sensors.GetSystemTemperatures()
+		if err != nil {
+			log.Printf("Warning: Failed to read temperature from WMI: %v", err)
+		} else {
+			fc.stateMutex.Lock()
+			fc.lastTemp = temps.MaxCpuTemp
+			fc.lastGpuTemp = temps.GpuTemp
+			fc.lastSuccessfulTempUpdate = time.Now()
+			fc.stateMutex.Unlock()
+		}
+	}
 
-	// Step 2: Lock the mutex only for the duration of state updates.
+	// Update tray tooltip with current temperatures
+	tooltip := fmt.Sprintf("CPU: %.1f°C", fc.lastTemp)
+	if fc.lastGpuTemp > 0 {
+		tooltip += fmt.Sprintf(" | GPU: %.1f°C", fc.lastGpuTemp)
+	}
+	if fc.onTempUpdate != nil {
+		fc.onTempUpdate(tooltip)
+	}
+
+	// Step 2: Lock the mutex for the rest of the tick.
 	fc.stateMutex.Lock()
 	defer fc.stateMutex.Unlock()
 
-	if err != nil {
-		log.Printf("Warning: Failed to read temperature: %v", err)
-		// Watchdog: If temp data is stale, force high fan speed for safety.
-		if !fc.lastSuccessfulTempUpdate.IsZero() && time.Since(fc.lastSuccessfulTempUpdate) > 20*time.Second {
-			log.Printf("CRITICAL: Temperature data is stale for >20s. Forcing fans to 100%%.")
-			for i := range fc.fanStates {
-				fc.fanStates[i].Mode = ModeManual
-				fc.fanStates[i].ManualSpeed = 100
-			}
+	// Watchdog: Check for stale data regardless of source.
+	if !fc.lastSuccessfulTempUpdate.IsZero() && time.Since(fc.lastSuccessfulTempUpdate) > 20*time.Second {
+		log.Printf("CRITICAL: Temperature data is stale for >20s. Forcing fans to 100%%.")
+		for i := range fc.fanStates {
+			fc.fanStates[i].Mode = ModeManual
+			fc.fanStates[i].ManualSpeed = 100
 		}
-	} else {
-		fc.lastTemp = temps.MaxCpuTemp
-		fc.lastGpuTemp = temps.GpuTemp
-		fc.lastSuccessfulTempUpdate = time.Now()
+		// Skip the rest of the tick to avoid acting on stale data
+		return
 	}
 
 	effectiveTemp := math.Max(fc.lastTemp, fc.lastGpuTemp)
