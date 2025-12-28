@@ -14,8 +14,16 @@ export function LoadConfig() {
   return window['go']['main']['App']['LoadConfig']();
 }
 
+export function ResetFanCurve(arg1) {
+  return window['go']['main']['App']['ResetFanCurve'](arg1);
+}
+
 export function SaveAppSettings(arg1) {
   return window['go']['main']['App']['SaveAppSettings'](arg1);
+}
+
+export function SaveFanCurve(arg1, arg2) {
+  return window['go']['main']['App']['SaveFanCurve'](arg1, arg2);
 }
 
 export function SetFanMode(arg1, arg2) {

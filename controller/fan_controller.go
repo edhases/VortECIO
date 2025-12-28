@@ -133,6 +133,13 @@ func (fc *FanController) LoadConfig(config *models.Config) {
 			ManualSpeed: 50,
 		}
 	}
+
+	// Update tray tooltip with current temperatures
+	tooltip := fmt.Sprintf("CPU: %.1f°C", fc.lastTemp)
+	if fc.lastGpuTemp > 0 {
+		tooltip += fmt.Sprintf(" | GPU: %.1f°C", fc.lastGpuTemp)
+	}
+	fc.app.UpdateTrayTooltip(tooltip)
 }
 
 // Start launches the main control loop in a background goroutine.
@@ -375,12 +382,6 @@ func (fc *FanController) tick() {
 		}
 	}
 
-	// Update tray tooltip with current temperatures
-	tooltip := fmt.Sprintf("CPU: %.1f°C", fc.lastTemp)
-	if fc.lastGpuTemp > 0 {
-		tooltip += fmt.Sprintf(" | GPU: %.1f°C", fc.lastGpuTemp)
-	}
-	fc.app.UpdateTrayTooltip(tooltip)
 }
 
 // isValidRPM checks if an RPM value is within a plausible range.

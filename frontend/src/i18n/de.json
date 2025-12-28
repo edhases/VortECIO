@@ -1,0 +1,22 @@
+{
+  "app_title": "VortECIO-Go",
+  "load_config": "Konfiguration laden",
+  "settings_btn": "Einstellungen",
+  "system_temp": "Systemtemperatur",
+  "no_config": "Bitte laden Sie eine NBFC-Konfigurationsdatei, um zu beginnen.",
+  "fan_header": "Lüfter",
+  "mode_label": "Modus",
+  "speed_label": "Manuelle Geschwindigkeit",
+  "mode_auto": "Auto",
+  "mode_manual": "Manuell",
+  "mode_disabled": "Deaktiviert",
+  "settings_title": "Anwendungseinstellungen",
+  "lang_label": "Sprache",
+  "autostart_label": "Beim Start ausführen",
+  "critical_temp_label": "Kritische Temperatur (°C)",
+  "safety_action_label": "Sicherheitsaktion",
+  "action_bios": "An BIOS übergeben",
+  "action_max": "100% Geschwindigkeit erzwingen",
+  "save_btn": "Speichern",
+  "cancel_btn": "Abbrechen"
+}

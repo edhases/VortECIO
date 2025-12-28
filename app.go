@@ -16,6 +16,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows/registry"
+	"github.com/energye/systray"
 )
 
 // App struct holds the application's state and dependencies.
@@ -37,6 +38,7 @@ func NewApp() *App {
 // startup is called when the app starts.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	go a.runSysTray()
 
 	// Determine settings path
 	exePath, err := os.Executable()
@@ -181,11 +183,6 @@ func (a *App) SaveFanCurve(fanIndex int, thresholds []models.TemperatureThreshol
 }
 
 // ResetFanCurve removes a user-defined fan curve for the currently loaded model.
-// UpdateTrayTooltip sets the tooltip for the system tray icon.
-func (a *App) UpdateTrayTooltip(tooltip string) {
-	runtime.TraySetTooltip(a.ctx, tooltip)
-}
-
 func (a *App) ResetFanCurve(fanIndex int) error {
 	config := a.fanController.GetConfig()
 	if config == nil || config.ModelName == "" {
@@ -304,4 +301,46 @@ func (a *App) SetAutoStart(enabled bool) error {
 	// If not enabled, delete the key.
 	// It's safe to call DeleteValue even if the value doesn't exist.
 	return key.DeleteValue(appName)
+}
+
+// runSysTray initializes and runs the system tray icon and menu.
+func (a *App) runSysTray() {
+	systray.Run(a.onSysTrayReady, a.onSysTrayExit)
+}
+
+// onSysTrayReady is called when the systray is ready.
+func (a *App) onSysTrayReady() {
+	// For simplicity, we assume the icon is in the build directory.
+	// A more robust solution would embed it or use a relative path.
+	iconBytes, err := os.ReadFile("frontend/src/assets/images/logo-universal.png")
+	if err != nil {
+		log.Printf("Warning: could not load tray icon: %v", err)
+	} else {
+		systray.SetIcon(iconBytes)
+	}
+
+	systray.SetTitle("VortECIO-Go")
+	systray.SetTooltip("VortECIO-Go is running")
+
+	mShow := systray.AddMenuItem("Show", "Show the main window")
+	mQuit := systray.AddMenuItem("Quit", "Quit the application")
+
+	for {
+		select {
+		case <-mShow.ClickedCh:
+			runtime.Show(a.ctx)
+		case <-mQuit.ClickedCh:
+			runtime.Quit(a.ctx)
+		}
+	}
+}
+
+// onSysTrayExit is called when the systray is exiting.
+func (a *App) onSysTrayExit() {
+	// Cleanup tasks can be performed here
+}
+
+// UpdateTrayTooltip is the new, correct implementation for updating the tooltip.
+func (a *App) UpdateTrayTooltip(tooltip string) {
+	systray.SetTooltip(tooltip)
 }

@@ -9,7 +9,11 @@ export function GetState():Promise<controller.PublicState>;
 
 export function LoadConfig():Promise<controller.PublicState>;
 
+export function ResetFanCurve(arg1:number):Promise<void>;
+
 export function SaveAppSettings(arg1:models.Settings):Promise<void>;
+
+export function SaveFanCurve(arg1:number,arg2:Array<models.TemperatureThreshold>):Promise<void>;
 
 export function SetFanMode(arg1:number,arg2:string):Promise<void>;
 
