@@ -25,8 +25,10 @@ const (
 
 // SettingsSnapshot holds a copy of the main app settings relevant to the controller.
 type SettingsSnapshot struct {
-	CriticalTemp int
-	SafetyAction string
+	CriticalTemp              int
+	SafetyAction              string
+	EnableCriticalTempRecovery bool
+	CriticalTempRecoveryDelta int
 }
 
 // FanState represents the current runtime state of a single fan.
@@ -71,8 +73,9 @@ type FanController struct {
 	config   *models.Config
 	settings SettingsSnapshot
 
-	fanStates  []FanState
-	stateMutex sync.RWMutex
+	fanStates      []FanState
+	inCriticalState bool // Flag to track if we are in a critical temp state
+	stateMutex     sync.RWMutex
 
 	lastTemp                 float64
 	lastGpuTemp              float64 // Нове поле для кешування
@@ -102,7 +105,10 @@ func (fc *FanController) UpdateSettings(newSettings *models.Settings) {
 	defer fc.stateMutex.Unlock()
 	fc.settings.CriticalTemp = newSettings.CriticalTemp
 	fc.settings.SafetyAction = newSettings.SafetyAction
-	log.Printf("Fan controller settings updated: CritTemp=%d, SafetyAction=%s", fc.settings.CriticalTemp, fc.settings.SafetyAction)
+	fc.settings.EnableCriticalTempRecovery = newSettings.EnableCriticalTempRecovery
+	fc.settings.CriticalTempRecoveryDelta = newSettings.CriticalTempRecoveryDelta
+	log.Printf("Fan controller settings updated: CritTemp=%d, SafetyAction=%s, RecoveryEnabled=%t, RecoveryDelta=%d",
+		fc.settings.CriticalTemp, fc.settings.SafetyAction, fc.settings.EnableCriticalTempRecovery, fc.settings.CriticalTempRecoveryDelta)
 }
 
 // LoadConfig applies a new configuration and initializes the fan states.
@@ -274,19 +280,34 @@ func (fc *FanController) tick() {
 
 	effectiveTemp := math.Max(fc.lastTemp, fc.lastGpuTemp)
 
-	// Safety logic for critical temperature
-	if effectiveTemp > float64(fc.settings.CriticalTemp) {
-		log.Printf("CRITICAL: Temp %.1f°C exceeds %d°C. Action: %s", effectiveTemp, fc.settings.CriticalTemp, fc.settings.SafetyAction)
-		if fc.settings.SafetyAction == "bios_control" {
-			fc.releaseAllFansToBios()
+	// Critical Temperature Safety Logic
+	recoveryThreshold := float64(fc.settings.CriticalTemp - fc.settings.CriticalTempRecoveryDelta)
+
+	if fc.inCriticalState {
+		// If in critical state, check if we should recover
+		if fc.settings.EnableCriticalTempRecovery && effectiveTemp < recoveryThreshold {
+			log.Printf("INFO: Temperature %.1f°C is below recovery threshold of %.1f°C. Restoring Auto mode.", effectiveTemp, recoveryThreshold)
 			for i := range fc.fanStates {
-				fc.fanStates[i].Mode = ModeDisabled
+				fc.fanStates[i].Mode = ModeAuto
 			}
-			return // Stop processing this tick
-		} else { // "force_full_speed"
-			for i := range fc.fanStates {
-				fc.fanStates[i].Mode = ModeManual
-				fc.fanStates[i].ManualSpeed = 100
+			fc.inCriticalState = false
+		}
+	} else {
+		// If not in critical state, check if we should enter it
+		if effectiveTemp > float64(fc.settings.CriticalTemp) {
+			log.Printf("CRITICAL: Temp %.1f°C exceeds %d°C. Action: %s", effectiveTemp, fc.settings.CriticalTemp, fc.settings.SafetyAction)
+			fc.inCriticalState = true
+			if fc.settings.SafetyAction == "bios_control" {
+				fc.releaseAllFansToBios()
+				for i := range fc.fanStates {
+					fc.fanStates[i].Mode = ModeDisabled
+				}
+				return // Stop processing this tick
+			} else { // "force_full_speed"
+				for i := range fc.fanStates {
+					fc.fanStates[i].Mode = ModeManual
+					fc.fanStates[i].ManualSpeed = 100
+				}
 			}
 		}
 	}

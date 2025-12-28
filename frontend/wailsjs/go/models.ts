@@ -84,11 +84,13 @@ export namespace controller {
 export namespace models {
 
 	export class Settings {
-	    lastConfigPath: string;
 	    language: string;
 	    autoStart: boolean;
+	    lastConfigPath: string;
 	    criticalTemp: number;
 	    safetyAction: string;
+	    enableCriticalTempRecovery: boolean;
+	    criticalTempRecoveryDelta: number;
 
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -96,11 +98,13 @@ export namespace models {
 
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.lastConfigPath = source["lastConfigPath"];
 	        this.language = source["language"];
 	        this.autoStart = source["autoStart"];
+	        this.lastConfigPath = source["lastConfigPath"];
 	        this.criticalTemp = source["criticalTemp"];
 	        this.safetyAction = source["safetyAction"];
+	        this.enableCriticalTempRecovery = source["enableCriticalTempRecovery"];
+	        this.criticalTempRecoveryDelta = source["criticalTempRecoveryDelta"];
 	    }
 	}
 	export class TemperatureThreshold {
