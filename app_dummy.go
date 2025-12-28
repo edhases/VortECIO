@@ -64,3 +64,15 @@ func (a *App) SaveAppSettings(newSettings models.Settings) error {
 	log.Printf("Dummy SaveAppSettings called: %+v", newSettings)
 	return nil
 }
+
+// SaveFanCurve is a dummy implementation for non-Windows systems.
+func (a *App) SaveFanCurve(fanIndex int, thresholds []models.TemperatureThreshold) error {
+	log.Printf("Dummy SaveFanCurve called: index=%d, thresholds=%+v", fanIndex, thresholds)
+	return nil
+}
+
+// ResetFanCurve is a dummy implementation for non-Windows systems.
+func (a *App) ResetFanCurve(fanIndex int) error {
+	log.Printf("Dummy ResetFanCurve called: index=%d", fanIndex)
+	return nil
+}

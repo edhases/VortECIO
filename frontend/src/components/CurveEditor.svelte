@@ -1,7 +1,7 @@
 <script>
     import { onMount, createEventDispatcher } from 'svelte';
     import { Line } from 'svelte-chartjs';
-    import { SaveFanCurve, ResetFanCurve } from '../../../wailsjs/go/main/App';
+    import { SaveFanCurve, ResetFanCurve } from '../../wailsjs/go/main/App';
     import {
         Chart as ChartJS,
         Title,

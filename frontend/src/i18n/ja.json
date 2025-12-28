@@ -1,0 +1,22 @@
+{
+  "app_title": "VortECIO-Go",
+  "load_config": "設定を読み込む",
+  "settings_btn": "設定",
+  "system_temp": "システム温度",
+  "no_config": "開始するにはNBFC設定ファイルを読み込んでください。",
+  "fan_header": "ファン",
+  "mode_label": "モード",
+  "speed_label": "手動速度",
+  "mode_auto": "自動",
+  "mode_manual": "手動",
+  "mode_disabled": "無効",
+  "settings_title": "アプリケーション設定",
+  "lang_label": "言語",
+  "autostart_label": "起動時に実行",
+  "critical_temp_label": "危険温度 (°C)",
+  "safety_action_label": "安全アクション",
+  "action_bios": "BIOSに解放",
+  "action_max": "100%速度を強制",
+  "save_btn": "保存",
+  "cancel_btn": "キャンセル"
+}

@@ -1,0 +1,22 @@
+{
+  "app_title": "VortECIO-Go",
+  "load_config": "Wczytaj konfigurację",
+  "settings_btn": "Ustawienia",
+  "system_temp": "Temperatura systemu",
+  "no_config": "Proszę wczytać plik konfiguracyjny NBFC, aby rozpocząć.",
+  "fan_header": "Wentylator",
+  "mode_label": "Tryb",
+  "speed_label": "Prędkość ręczna",
+  "mode_auto": "Auto",
+  "mode_manual": "Ręczny",
+  "mode_disabled": "Wyłączony",
+  "settings_title": "Ustawienia aplikacji",
+  "lang_label": "Język",
+  "autostart_label": "Uruchom przy starcie",
+  "critical_temp_label": "Temperatura krytyczna (°C)",
+  "safety_action_label": "Akcja bezpieczeństwa",
+  "action_bios": "Przekaż do BIOS",
+  "action_max": "Wymuś 100% prędkości",
+  "save_btn": "Zapisz",
+  "cancel_btn": "Anuluj"
+}

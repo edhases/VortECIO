@@ -2,8 +2,11 @@ import { writable, get } from 'svelte/store';
 import { GetSettings } from '../../wailsjs/go/main/App';
 import en from './en.json';
 import ua from './ua.json';
+import de from './de.json';
+import ja from './ja.json';
+import pl from './pl.json';
 
-const translations = { en, ua };
+const translations = { en, ua, de, ja, pl };
 
 // Fallback language
 const defaultLocale = 'en';
