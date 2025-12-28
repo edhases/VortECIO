@@ -64,7 +64,7 @@
                 disabled={fan.Mode !== 'Manual'}
             />
             <span class="speed-label">
-                {fan.ReadSpeedPercent < 0 ? 'N/A' : fan.ReadSpeedPercent + '%'}
+                {fan.Mode === 'Manual' ? fan.ManualSpeed + '%' : (fan.ReadSpeedPercent < 0 ? 'N/A' : fan.ReadSpeedPercent + '%')}
                 {#if fan.currentRpm > 0}
                     <span class="rpm-label">{fan.currentRpm} RPM</span>
                 {/if}

@@ -1,0 +1,8 @@
+{
+  "id": "vortecio-lhm-plugin",
+  "name": "Libre Hardware Monitor Sensor",
+  "version": "1.0.0",
+  "type": "sensor_provider",
+  "executable": "VortSensors.exe",
+  "description": "Advanced CPU temperature monitoring via LHM"
+}

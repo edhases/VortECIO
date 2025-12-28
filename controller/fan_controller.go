@@ -76,29 +76,29 @@ type AppController interface {
 
 // FanController manages the core fan control logic in a separate goroutine.
 type FanController struct {
-	ecDriver       hardware.ECDriver // Use the interface
-	config         *models.Config
-	settings       SettingsSnapshot
-	sensorSource   SensorSource
-	onTempUpdate   func(tooltip string) // Callback to update UI elements like tray tooltip
-	fanStates      []FanState
-	inCriticalState bool // Flag to track if we are in a critical temp state
-	stateMutex     sync.RWMutex
-	lastTemp       float64
-	lastGpuTemp    float64
+	ecDriver                 hardware.ECDriver // Use the interface
+	config                   *models.Config
+	settings                 SettingsSnapshot
+	sensorSource             SensorSource
+	onTempUpdate             func(tooltip string) // Callback to update UI elements like tray tooltip
+	fanStates                []FanState
+	inCriticalState          bool // Flag to track if we are in a critical temp state
+	stateMutex               sync.RWMutex
+	lastTemp                 float64
+	lastGpuTemp              float64
 	lastSuccessfulTempUpdate time.Time
-	ctx            context.Context
-	cancel         context.CancelFunc
-	wg             sync.WaitGroup
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	wg                       sync.WaitGroup
 }
 
 // NewFanController creates a new, uninitialized fan controller.
 func NewFanController(ctx context.Context, driver hardware.ECDriver, onTempUpdate func(tooltip string)) *FanController {
 	return &FanController{
-		ctx:            ctx,
-		ecDriver:       driver,
-		onTempUpdate:   onTempUpdate,
-		sensorSource:   SensorSourceSidecar, // Default to the new sidecar
+		ctx:          ctx,
+		ecDriver:     driver,
+		onTempUpdate: onTempUpdate,
+		sensorSource: SensorSourceWMI, // Default to WMI
 		settings: SettingsSnapshot{ // Default safety settings
 			CriticalTemp: 80,
 			SafetyAction: "bios_control",

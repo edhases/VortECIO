@@ -10,4 +10,5 @@ type Settings struct {
 	SafetyAction               string `json:"safetyAction"`
 	EnableCriticalTempRecovery bool   `json:"enableCriticalTempRecovery"`
 	CriticalTempRecoveryDelta  int    `json:"criticalTempRecoveryDelta"`
+	SensorProviderPluginID     string `json:"sensorProviderPluginID"` // ID of the selected sensor plugin
 }

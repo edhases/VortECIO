@@ -130,9 +130,11 @@
         <button class:active={activeTab === 'Dashboard'} on:click={() => activeTab = 'Dashboard'}>
             {$t.dashboard_tab}
         </button>
+        {#if settings.sensorProviderPluginID}
         <button class:active={activeTab === 'System Info'} on:click={() => activeTab = 'System Info'}>
             {$t.system_info_tab}
         </button>
+        {/if}
     </div>
 
     <div class="content">
