@@ -142,7 +142,7 @@ func (a *App) SaveAppSettings(newSettings models.Settings) error {
 	a.settings = newSettings
 	a.fanController.UpdateSettings(&a.settings) // Update controller logic
 
-	if err := a.SetAutoStart(a.settings.AutoStart); err != nil {
+	if err := a.SetAutoStart(newSettings.AutoStart); err != nil {
 		log.Printf("Error setting auto-start: %v", err)
 		// Return the error to the frontend so the user knows something went wrong.
 		return fmt.Errorf("failed to update auto-start setting: %w", err)

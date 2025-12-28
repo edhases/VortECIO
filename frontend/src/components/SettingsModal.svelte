@@ -5,6 +5,15 @@
     export let settings = {};
 
     const dispatch = createEventDispatcher();
+
+    function validateDelta() {
+        if (settings.criticalTempRecoveryDelta < 3) {
+            settings.criticalTempRecoveryDelta = 3;
+        }
+        if (settings.criticalTempRecoveryDelta > 15) {
+            settings.criticalTempRecoveryDelta = 15;
+        }
+    }
 </script>
 
 <div class="modal-backdrop">
@@ -36,6 +45,29 @@
                 <option value="force_full_speed">{$t.action_max}</option>
             </select>
         </div>
+
+    <hr>
+
+    <div class="form-group">
+        <label>
+            <input type="checkbox" bind:checked={settings.enableCriticalTempRecovery} />
+            {$t.settings_enable_recovery}
+        </label>
+    </div>
+
+    <div class="form-group" class:disabled={!settings.enableCriticalTempRecovery}>
+        <label for="recovery-delta">{$t.settings_recovery_delta}</label>
+        <input
+            type="number"
+            id="recovery-delta"
+            bind:value={settings.criticalTempRecoveryDelta}
+            min="3"
+            max="15"
+            disabled={!settings.enableCriticalTempRecovery}
+            on:input={validateDelta}
+        />
+        <small>({$t.settings_recovery_delta_hint})</small>
+    </div>
 
         <div class="modal-actions">
             <button on:click={() => dispatch('save')}>{$t.save_btn}</button>
@@ -114,5 +146,9 @@
     }
     .cancel-btn:hover {
         background-color: #95a5a6;
+    }
+    .form-group.disabled {
+        opacity: 0.5;
+        pointer-events: none;
     }
 </style>

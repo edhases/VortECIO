@@ -1,10 +1,13 @@
 package models
 
-// Settings struct for storing application settings.
+// Settings holds the user-configurable application settings.
+// These are stored in settings.json.
 type Settings struct {
-	LastConfigPath string `json:"lastConfigPath"`
-	Language       string `json:"language"`
-	AutoStart      bool   `json:"autoStart"`
-	CriticalTemp   int    `json:"criticalTemp"`
-	SafetyAction   string `json:"safetyAction"` // "bios_control" or "force_full_speed"
+	Language                  string `json:"language"`
+	AutoStart                 bool   `json:"autoStart"`
+	LastConfigPath            string `json:"lastConfigPath"`
+	CriticalTemp              int    `json:"criticalTemp"`
+	SafetyAction              string `json:"safetyAction"`
+	EnableCriticalTempRecovery bool   `json:"enableCriticalTempRecovery"`
+	CriticalTempRecoveryDelta int    `json:"criticalTempRecoveryDelta"`
 }
