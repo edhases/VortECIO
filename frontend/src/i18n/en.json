@@ -18,5 +18,7 @@
   "action_bios": "Release to BIOS",
   "action_max": "Force 100% Speed",
   "save_btn": "Save",
-  "cancel_btn": "Cancel"
+  "cancel_btn": "Cancel",
+  "dashboard_tab": "Dashboard",
+  "system_info_tab": "System Info"
 }
