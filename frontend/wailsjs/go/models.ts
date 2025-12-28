@@ -91,6 +91,7 @@ export namespace models {
 	    safetyAction: string;
 	    enableCriticalTempRecovery: boolean;
 	    criticalTempRecoveryDelta: number;
+	    sensorProviderPluginID: string;
 
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -105,6 +106,7 @@ export namespace models {
 	        this.safetyAction = source["safetyAction"];
 	        this.enableCriticalTempRecovery = source["enableCriticalTempRecovery"];
 	        this.criticalTempRecoveryDelta = source["criticalTempRecoveryDelta"];
+	        this.sensorProviderPluginID = source["sensorProviderPluginID"];
 	    }
 	}
 	export class TemperatureThreshold {

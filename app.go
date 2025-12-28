@@ -26,6 +26,7 @@ type App struct {
 	ecDriver         hardware.ECDriver
 	fanController    *controller.FanController
 	monitorService   *services.MonitorService
+	pluginService    *services.PluginService
 	settings         models.Settings
 	settingsPath     string
 	userProfiles     models.UserProfiles
@@ -35,6 +36,16 @@ type App struct {
 // NewApp creates a new App application struct.
 func NewApp() *App {
 	return &App{}
+}
+
+// GetSensorPlugins returns a list of available sensor provider plugins.
+func (a *App) GetSensorPlugins() []services.PluginManifest {
+	plugins := a.pluginService.GetSensorProviders()
+	manifests := make([]services.PluginManifest, len(plugins))
+	for i, p := range plugins {
+		manifests[i] = p.Manifest
+	}
+	return manifests
 }
 
 // startup is called when the app starts.
@@ -49,16 +60,20 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.settingsPath = filepath.Join(baseDir, "settings.json")
 	a.userProfilesPath = filepath.Join(baseDir, "user_profiles.json")
-	sidecarPath := filepath.Join(baseDir, "VortSensors.exe")
+	pluginDir := filepath.Join(baseDir, "plugins")
+
+	// Discover plugins first
+	a.pluginService = services.NewPluginService(pluginDir)
 
 	// Load settings or create default
 	if err := a.loadSettings(); err != nil {
 		log.Printf("Could not load settings, creating default: %v", err)
 		a.settings = models.Settings{
-			Language:     "en",
-			AutoStart:    false,
-			CriticalTemp: 80,
-			SafetyAction: "bios_control",
+			Language:               "en",
+			AutoStart:              false,
+			CriticalTemp:           80,
+			SafetyAction:           "bios_control",
+			SensorProviderPluginID: "", // Default to WMI
 		}
 		// Try to save the new default settings
 		if err := a.saveSettingsToFile(); err != nil {
@@ -86,16 +101,29 @@ func (a *App) startup(ctx context.Context) {
 	a.fanController = controller.NewFanController(a.ctx, a.ecDriver, a.UpdateTrayTooltip)
 	a.fanController.UpdateSettings(&a.settings) // Pass initial settings to controller
 
-	// Initialize and start the monitor service
-	a.monitorService = services.NewMonitorService(sidecarPath)
-	a.monitorService.OnData = func(info services.SystemInfo) {
-		// Pass temperatures to fan controller
-		a.fanController.UpdateTemperatures(info.CPU.PackageTemp, info.GPU.Temp)
-		// Emit full data to the frontend
-		runtime.EventsEmit(a.ctx, "systemInfo", info)
-	}
-	a.monitorService.OnError = func(err error) {
-		log.Printf("Monitor service error: %v. Activating fallback.", err)
+	// Initialize and start monitor service based on settings
+	if a.settings.SensorProviderPluginID != "" {
+		if plugin, ok := a.pluginService.GetPluginByID(a.settings.SensorProviderPluginID); ok {
+			sidecarPath := filepath.Join(plugin.BasePath, plugin.Manifest.Executable)
+
+			a.monitorService = services.NewMonitorService(sidecarPath)
+			a.monitorService.OnData = func(info services.SystemInfo) {
+				a.fanController.UpdateTemperatures(info.CPU.PackageTemp, info.GPU.Temp)
+				runtime.EventsEmit(a.ctx, "systemInfo", info)
+			}
+			a.monitorService.OnError = func(err error) {
+				log.Printf("Monitor service plugin '%s' error: %v. Activating fallback.", plugin.Manifest.Name, err)
+				a.fanController.SetSensorSource(controller.SensorSourceWMI)
+			}
+
+			a.fanController.SetSensorSource(controller.SensorSourceSidecar)
+			a.monitorService.Start()
+		} else {
+			log.Printf("Warning: Selected sensor plugin '%s' not found. Defaulting to WMI.", a.settings.SensorProviderPluginID)
+			a.fanController.SetSensorSource(controller.SensorSourceWMI)
+		}
+	} else {
+		log.Println("No sensor plugin selected. Defaulting to WMI.")
 		a.fanController.SetSensorSource(controller.SensorSourceWMI)
 	}
 
@@ -108,9 +136,6 @@ func (a *App) startup(ctx context.Context) {
 			log.Printf("Warning: last config file not found at %s", a.settings.LastConfigPath)
 		}
 	}
-
-	// Start sensor monitoring after config is loaded and controller is ready
-	a.monitorService.Start()
 }
 
 // shutdown is called when the app is closing.
@@ -318,7 +343,7 @@ func (a *App) SetAutoStart(enabled bool) error {
 			return fmt.Errorf("failed to get executable path: %w", err)
 		}
 		// Set the value to the path of the executable, enclosed in quotes.
-		return key.SetStringValue(appName, fmt.Sprintf(`"%s"`, exePath))
+		return key.SetStringValue(appName, `"`+exePath+`"`)
 	}
 
 	// If not enabled, delete the key.

@@ -1,10 +1,28 @@
 <script>
-    import { createEventDispatcher } from 'svelte';
+    import { createEventDispatcher, onMount } from 'svelte';
     import { t } from '../i18n/store.js';
+    import { GetSensorPlugins } from "../../../wailsjs/go/main/App";
 
     export let settings = {};
 
     const dispatch = createEventDispatcher();
+
+    let sensorPlugins = [];
+    let initialPluginID;
+
+    onMount(() => {
+        initialPluginID = settings.sensorProviderPluginID;
+        GetSensorPlugins().then(plugins => {
+            sensorPlugins = plugins;
+        });
+    });
+
+    function handleSave() {
+        if (settings.sensorProviderPluginID !== initialPluginID) {
+            alert("Sensor provider changed. Please restart the application for changes to take effect.");
+        }
+        dispatch('save');
+    }
 
     function validateDelta() {
         if (settings.criticalTempRecoveryDelta < 3) {
@@ -33,6 +51,20 @@
             <input type="checkbox" id="autostart" bind:checked={settings.autoStart} />
         </div>
 
+        <hr>
+
+        <div class="form-group">
+            <label for="sensor-provider">CPU Sensor Source</label>
+            <select id="sensor-provider" bind:value={settings.sensorProviderPluginID}>
+                <option value="">WMI (System)</option>
+                {#each sensorPlugins as plugin}
+                    <option value={plugin.id}>{plugin.name}</option>
+                {/each}
+            </select>
+        </div>
+
+        <hr>
+
         <div class="form-group">
             <label for="critical-temp">{$t.critical_temp_label}</label>
             <input type="number" id="critical-temp" bind:value={settings.criticalTemp} min="70" max="100" />
@@ -46,31 +78,29 @@
             </select>
         </div>
 
-    <hr>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" bind:checked={settings.enableCriticalTempRecovery} />
+                {$t.settings_enable_recovery}
+            </label>
+        </div>
 
-    <div class="form-group">
-        <label>
-            <input type="checkbox" bind:checked={settings.enableCriticalTempRecovery} />
-            {$t.settings_enable_recovery}
-        </label>
-    </div>
-
-    <div class="form-group" class:disabled={!settings.enableCriticalTempRecovery}>
-        <label for="recovery-delta">{$t.settings_recovery_delta}</label>
-        <input
-            type="number"
-            id="recovery-delta"
-            bind:value={settings.criticalTempRecoveryDelta}
-            min="3"
-            max="15"
-            disabled={!settings.enableCriticalTempRecovery}
-            on:input={validateDelta}
-        />
-        <small>({$t.settings_recovery_delta_hint})</small>
-    </div>
+        <div class="form-group" class:disabled={!settings.enableCriticalTempRecovery}>
+            <label for="recovery-delta">{$t.settings_recovery_delta}</label>
+            <input
+                type="number"
+                id="recovery-delta"
+                bind:value={settings.criticalTempRecoveryDelta}
+                min="3"
+                max="15"
+                disabled={!settings.enableCriticalTempRecovery}
+                on:input={validateDelta}
+            />
+            <small>({$t.settings_recovery_delta_hint})</small>
+        </div>
 
         <div class="modal-actions">
-            <button on:click={() => dispatch('save')}>{$t.save_btn}</button>
+            <button on:click={handleSave}>{$t.save_btn}</button>
             <button on:click={() => dispatch('close')} class="cancel-btn">{$t.cancel_btn}</button>
         </div>
     </div>

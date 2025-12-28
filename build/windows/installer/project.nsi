@@ -88,9 +88,12 @@ Section
 
     !insertmacro wails.files
     File "..\..\..\inpoutx64.dll"
-    File "..\..\bin\VortSensors.exe"
-    File "..\..\bin\LibreHardwareMonitorLib.dll"
 
+    ; Copy all plugins
+    SetOutPath "$INSTDIR\plugins"
+    File /r "..\..\..\plugins\*.*"
+
+    SetOutPath "$INSTDIR" ; Reset OutPath
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
