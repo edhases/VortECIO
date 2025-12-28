@@ -1,7 +1,7 @@
 <script>
     import { createEventDispatcher, onMount } from 'svelte';
     import { t } from '../i18n/store.js';
-    import { GetSensorPlugins } from "../../wailsjs/go/main/App";
+    // import { GetSensorPlugins } from "../../wailsjs/go/main/App"; // Temporarily disabled due to build issue
 
     export let settings = {};
 
@@ -12,9 +12,9 @@
 
     onMount(() => {
         initialPluginID = settings.sensorProviderPluginID;
-        GetSensorPlugins().then(plugins => {
-            sensorPlugins = plugins;
-        });
+        // GetSensorPlugins().then(plugins => { // Temporarily disabled due to build issue
+        //     sensorPlugins = plugins;
+        // });
     });
 
     function handleSave() {
