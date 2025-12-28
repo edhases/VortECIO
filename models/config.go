@@ -16,9 +16,10 @@ type Config struct {
 
 // FanConfiguration holds the settings for a single fan.
 type FanConfiguration struct {
-	ReadRegister       int                  `xml:"ReadRegister"`
-	WriteRegister      int                  `xml:"WriteRegister"`
-	MinSpeedValue      int                  `xml:"MinSpeedValue"`
+	ReadRegister       int    `xml:"ReadRegister"`
+	WriteRegister      int    `xml:"WriteRegister"`
+	RpmRegister        int    `xml:"RpmRegister,omitempty"` // Optional: Register for reading fan RPM
+	MinSpeedValue      int    `xml:"MinSpeedValue"`
 	MaxSpeedValue      int                  `xml:"MaxSpeedValue"`
 	ResetRequired      bool                 `xml:"ResetRequired"`
 	FanSpeedResetValue int                  `xml:"FanSpeedResetValue"`

@@ -31,32 +31,36 @@ type SettingsSnapshot struct {
 
 // FanState represents the current runtime state of a single fan.
 type FanState struct {
-	Mode                FanMode
-	ManualSpeed         int // User-set percentage (0-100) for Manual mode
-	TargetSpeedPercent  int // Last calculated/set speed percentage
-	ReadSpeedPercent    int // Speed percentage read back from the EC
+	Mode               FanMode
+	ManualSpeed        int // User-set percentage (0-100) for Manual mode
+	TargetSpeedPercent int // The speed calculated by the fan curve
+	CurrentSpeed       int // The smoothed speed being written to the EC
+	ReadSpeedPercent   int // Speed percentage read back from the EC
+	CurrentRPM         int // Actual RPM read from the sensor
+	LastValidRPM       int // Used for spike filter
 	biosControlReleased bool
 }
 
 // PublicState is a simplified, thread-safe representation of the controller's state for the UI.
 type PublicState struct {
 	SystemTemp float64
-	GpuTemp    float64 // Нове поле
+	GpuTemp    float64
 	Fans       []PublicFanState
 	ModelName  string
 }
 
 type PublicFanState struct {
-	Name               string
-	Mode               FanMode
-	ManualSpeed        int
-	TargetSpeedPercent int
-	ReadSpeedPercent   int
+	Name               string  `json:"name"`
+	Mode               FanMode `json:"mode"`
+	ManualSpeed        int     `json:"manualSpeed"`
+	TargetSpeedPercent int     `json:"targetSpeedPercent"`
+	ReadSpeedPercent   int     `json:"readSpeedPercent"`
+	CurrentRPM         int     `json:"currentRpm"`
 }
 
 // FanController manages the core fan control logic in a separate goroutine.
 type FanController struct {
-	ecDriver *hardware.EcDriver
+	ecDriver hardware.ECDriver // Use the interface
 	config   *models.Config
 	settings SettingsSnapshot
 
@@ -73,7 +77,7 @@ type FanController struct {
 }
 
 // NewFanController creates a new, uninitialized fan controller.
-func NewFanController(driver *hardware.EcDriver) *FanController {
+func NewFanController(driver hardware.ECDriver) *FanController {
 	return &FanController{
 		ecDriver: driver,
 		settings: SettingsSnapshot{ // Default safety settings
@@ -185,7 +189,7 @@ func (fc *FanController) GetPublicState() PublicState {
 
 	state := PublicState{
 		SystemTemp: fc.lastTemp,
-		GpuTemp:    fc.lastGpuTemp, // Передаємо на фронт
+		GpuTemp:    fc.lastGpuTemp,
 		ModelName:  fc.config.ModelName,
 		Fans:       make([]PublicFanState, len(fc.fanStates)),
 	}
@@ -197,6 +201,7 @@ func (fc *FanController) GetPublicState() PublicState {
 			ManualSpeed:        fan.ManualSpeed,
 			TargetSpeedPercent: fan.TargetSpeedPercent,
 			ReadSpeedPercent:   fan.ReadSpeedPercent,
+			CurrentRPM:         fan.CurrentRPM,
 		}
 	}
 	return state
@@ -228,19 +233,18 @@ func (fc *FanController) controlLoop() {
 
 // tick performs a single control cycle.
 func (fc *FanController) tick() {
-	// КРОК 1: Читаємо сенсори БЕЗ блокування м'ютекса!
-	// Це займає час (WMI повільний), але тепер це не блокує UI.
+	// Step 1: Read sensors without locking the mutex to avoid blocking the UI.
 	temps, err := sensors.GetSystemTemperatures()
 
-	// КРОК 2: Блокуємо м'ютекс тільки для оновлення стану
+	// Step 2: Lock the mutex only for the duration of state updates.
 	fc.stateMutex.Lock()
 	defer fc.stateMutex.Unlock()
 
 	if err != nil {
 		log.Printf("Warning: Failed to read temperature: %v", err)
-		// Watchdog: if temp data is stale for too long, force high fan speed for safety.
+		// Watchdog: If temp data is stale, force high fan speed for safety.
 		if !fc.lastSuccessfulTempUpdate.IsZero() && time.Since(fc.lastSuccessfulTempUpdate) > 20*time.Second {
-			log.Printf("CRITICAL: Temperature data is stale for more than 20s. Forcing fans to 100%.")
+			log.Printf("CRITICAL: Temperature data is stale for >20s. Forcing fans to 100%%.")
 			for i := range fc.fanStates {
 				fc.fanStates[i].Mode = ModeManual
 				fc.fanStates[i].ManualSpeed = 100
@@ -252,28 +256,22 @@ func (fc *FanController) tick() {
 		fc.lastSuccessfulTempUpdate = time.Now()
 	}
 
-	// Використовуємо максимальну температуру для захисту (безпечніше)
-	effectiveTemp := fc.lastTemp
-	if fc.lastGpuTemp > effectiveTemp {
-		effectiveTemp = fc.lastGpuTemp
-	}
+	effectiveTemp := math.Max(fc.lastTemp, fc.lastGpuTemp)
 
-	// Safety logic based on settings
+	// Safety logic for critical temperature
 	if effectiveTemp > float64(fc.settings.CriticalTemp) {
-		log.Printf("CRITICAL: Temperature %.1f°C exceeds threshold of %d°C. Action: %s", effectiveTemp, fc.settings.CriticalTemp, fc.settings.SafetyAction)
-		switch fc.settings.SafetyAction {
-		case "bios_control":
+		log.Printf("CRITICAL: Temp %.1f°C exceeds %d°C. Action: %s", effectiveTemp, fc.settings.CriticalTemp, fc.settings.SafetyAction)
+		if fc.settings.SafetyAction == "bios_control" {
 			fc.releaseAllFansToBios()
 			for i := range fc.fanStates {
 				fc.fanStates[i].Mode = ModeDisabled
 			}
-			return // Stop further processing this tick
-		case "force_full_speed":
+			return // Stop processing this tick
+		} else { // "force_full_speed"
 			for i := range fc.fanStates {
 				fc.fanStates[i].Mode = ModeManual
 				fc.fanStates[i].ManualSpeed = 100
 			}
-			// Continue to the main loop to apply 100% speed
 		}
 	}
 
@@ -281,50 +279,69 @@ func (fc *FanController) tick() {
 		return
 	}
 
+	// --- Pass 1: Read RPM and current speed for all fans ---
 	for i, fanConfig := range fc.config.FanConfigurations {
 		state := &fc.fanStates[i]
-		var targetSpeedPercent int
-
-		// Read current speed BEFORE deciding what to write
-		rawValue, err := fc.ecDriver.Read(fanConfig.ReadRegister)
-		if err != nil {
-			log.Printf("Error reading fan %d speed: %v", i, err)
-			state.ReadSpeedPercent = -1 // Indicate error
-		} else {
-			// Assuming the read value scales linearly from 0-255 to 0-100%
-			state.ReadSpeedPercent = int(math.Round(float64(rawValue) / 255.0 * 100.0))
+		if fanConfig.RpmRegister > 0 {
+			rawRpm, err := fc.ecDriver.ReadWord(fanConfig.RpmRegister)
+			if err == nil && isValidRPM(rawRpm) {
+				diff := int(math.Abs(float64(rawRpm - state.LastValidRPM)))
+				if state.LastValidRPM == 0 || diff < 3000 {
+					state.CurrentRPM = rawRpm
+					state.LastValidRPM = rawRpm
+				}
+			}
 		}
+		rawValue, err := fc.ecDriver.Read(fanConfig.ReadRegister)
+		if err == nil {
+			state.ReadSpeedPercent = int(math.Round(float64(rawValue) / 255.0 * 100.0))
+		} else {
+			state.ReadSpeedPercent = -1
+		}
+	}
+
+	// --- Pass 2: Calculate target speed and write to EC ---
+	for i, fanConfig := range fc.config.FanConfigurations {
+		state := &fc.fanStates[i]
 
 		switch state.Mode {
 		case ModeAuto:
-			targetSpeedPercent = calculateSpeedForTemp(effectiveTemp, fanConfig.TemperatureThresholds)
+			state.TargetSpeedPercent = calculateSpeedForTemp(effectiveTemp, state.TargetSpeedPercent, fanConfig.TemperatureThresholds)
 			state.biosControlReleased = false
 		case ModeManual:
-			targetSpeedPercent = state.ManualSpeed
+			state.TargetSpeedPercent = state.ManualSpeed
 			state.biosControlReleased = false
-		case ModeReadOnly:
-			// Only read, do not write.
-			continue
-		case ModeDisabled:
-			// Release control to BIOS if not already done.
-			if !state.biosControlReleased {
-				if fanConfig.ResetRequired {
-					log.Printf("Fan %d (%s): Releasing control to BIOS (writing %d)", i, fanConfig.FanDisplayName, fanConfig.FanSpeedResetValue)
-					fc.ecDriver.Write(fanConfig.WriteRegister, byte(fanConfig.FanSpeedResetValue))
+		case ModeReadOnly, ModeDisabled:
+			if !state.biosControlReleased && fanConfig.ResetRequired {
+				if err := fc.ecDriver.Write(fanConfig.WriteRegister, byte(fanConfig.FanSpeedResetValue)); err != nil {
+					log.Printf("Error releasing fan %d to BIOS control: %v", i, err)
 				}
 				state.biosControlReleased = true
 			}
 			continue
 		}
 
-		state.TargetSpeedPercent = targetSpeedPercent
-		ecValue := scaleSpeedToECValue(targetSpeedPercent, fanConfig.MinSpeedValue, fanConfig.MaxSpeedValue)
+		// Smoothing logic
+		const smoothingStep = 10
+		if state.CurrentSpeed < state.TargetSpeedPercent {
+			state.CurrentSpeed = min(state.CurrentSpeed+smoothingStep, state.TargetSpeedPercent)
+		} else if state.CurrentSpeed > state.TargetSpeedPercent {
+			state.CurrentSpeed = max(state.CurrentSpeed-smoothingStep, state.TargetSpeedPercent)
+		}
 
-		err = fc.ecDriver.Write(fanConfig.WriteRegister, ecValue)
-		if err != nil {
-			log.Printf("Error writing to EC for fan %d: %v", i, err)
+		ecValue := scaleSpeedToECValue(state.CurrentSpeed, fanConfig.MinSpeedValue, fanConfig.MaxSpeedValue)
+		// Only write if the value is different to avoid unnecessary EC communication
+		if state.CurrentSpeed != state.ReadSpeedPercent {
+			if err := fc.ecDriver.Write(fanConfig.WriteRegister, ecValue); err != nil {
+				log.Printf("Error writing to EC for fan %d: %v", i, err)
+			}
 		}
 	}
+}
+
+// isValidRPM checks if an RPM value is within a plausible range.
+func isValidRPM(val int) bool {
+	return val != 0xFFFF && val >= 0 && val < 15000
 }
 
 // releaseAllFansToBios is a utility function for shutdown or panic mode.
@@ -336,22 +353,33 @@ func (fc *FanController) releaseAllFansToBios() {
 	for i, fanConfig := range fc.config.FanConfigurations {
 		if fanConfig.ResetRequired {
 			log.Printf("Fan %d (%s): Releasing control", i, fanConfig.FanDisplayName)
-			fc.ecDriver.Write(fanConfig.WriteRegister, byte(fanConfig.FanSpeedResetValue))
+			if err := fc.ecDriver.Write(fanConfig.WriteRegister, byte(fanConfig.FanSpeedResetValue)); err != nil {
+				log.Printf("Error releasing fan %d to BIOS control during shutdown: %v", i, err)
+			}
 		}
 	}
 }
 
-// calculateSpeedForTemp determines the appropriate fan speed for a given temperature.
-func calculateSpeedForTemp(temp float64, thresholds []models.TemperatureThreshold) int {
-	speed := 0.0
-	for _, t := range thresholds {
+// calculateSpeedForTemp determines fan speed with hysteresis.
+func calculateSpeedForTemp(temp float64, currentSpeed int, thresholds []models.TemperatureThreshold) int {
+	// Find the highest threshold we are currently at or above
+	for i := len(thresholds) - 1; i >= 0; i-- {
+		t := thresholds[i]
 		if temp >= float64(t.UpThreshold) {
-			speed = t.FanSpeed
-		} else {
-			break
+			return int(t.FanSpeed)
 		}
 	}
-	return int(speed)
+
+	// If below all UpThresholds, find where we are relative to DownThresholds
+	for i, t := range thresholds {
+		if temp < float64(t.DownThreshold) {
+			if i > 0 {
+				return int(thresholds[i-1].FanSpeed)
+			}
+			return 0 // Below the lowest threshold
+		}
+	}
+	return currentSpeed // Maintain speed if in hysteresis zone
 }
 
 // scaleSpeedToECValue converts a 0-100 percentage to the raw EC value.
@@ -362,6 +390,6 @@ func scaleSpeedToECValue(percent, minVal, maxVal int) byte {
 	if percent >= 100 {
 		return byte(maxVal)
 	}
-	val := minVal + ((maxVal - minVal) * percent / 100)
+	val := minVal + int(math.Round(float64(maxVal-minVal)*float64(percent)/100.0))
 	return byte(val)
 }

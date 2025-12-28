@@ -6,9 +6,9 @@ import (
 	"VortECIO-Go/controller"
 	"VortECIO-Go/hardware"
 	"VortECIO-Go/models"
+	"VortECIO-Go/utils" // Import the new utils package
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"log"
 	"os"
@@ -144,17 +144,12 @@ func (a *App) SaveAppSettings(newSettings models.Settings) error {
 // --- Helper methods ---
 
 func (a *App) loadConfigFile(path string) (controller.PublicState, error) {
-	xmlFile, err := os.ReadFile(path)
+	config, err := utils.LoadConfigFromXML(path)
 	if err != nil {
-		return controller.PublicState{}, fmt.Errorf("failed to read config file: %w", err)
+		return controller.PublicState{}, err // Pass the error up
 	}
 
-	var config models.Config
-	if err := xml.Unmarshal(xmlFile, &config); err != nil {
-		return controller.PublicState{}, fmt.Errorf("failed to parse XML config: %w", err)
-	}
-
-	a.fanController.LoadConfig(&config)
+	a.fanController.LoadConfig(config)
 	a.fanController.Start()
 
 	// Save the path for next launch

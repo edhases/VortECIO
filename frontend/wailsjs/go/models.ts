@@ -1,11 +1,12 @@
 export namespace controller {
 
 	export class PublicFanState {
-	    Name: string;
-	    Mode: string;
-	    ManualSpeed: number;
-	    TargetSpeedPercent: number;
-	    ReadSpeedPercent: number;
+	    name: string;
+	    mode: string;
+	    manualSpeed: number;
+	    targetSpeedPercent: number;
+	    readSpeedPercent: number;
+	    currentRpm: number;
 
 	    static createFrom(source: any = {}) {
 	        return new PublicFanState(source);
@@ -13,11 +14,12 @@ export namespace controller {
 
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Name = source["Name"];
-	        this.Mode = source["Mode"];
-	        this.ManualSpeed = source["ManualSpeed"];
-	        this.TargetSpeedPercent = source["TargetSpeedPercent"];
-	        this.ReadSpeedPercent = source["ReadSpeedPercent"];
+	        this.name = source["name"];
+	        this.mode = source["mode"];
+	        this.manualSpeed = source["manualSpeed"];
+	        this.targetSpeedPercent = source["targetSpeedPercent"];
+	        this.readSpeedPercent = source["readSpeedPercent"];
+	        this.currentRpm = source["currentRpm"];
 	    }
 	}
 	export class PublicState {
