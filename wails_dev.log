@@ -1,0 +1,47 @@
+[0;92mWails CLI[0m [0;31mv2.11.0[0m
+
+[0;92mExecuting: go mod tidy[0m
+  [90m[90m•[0m[0m [39m[39mGenerating bindings: [0m[0mDone.
+  [90m[90m•[0m[0m [39m[39mInstalling frontend dependencies: [0m[0mDone.
+  [90m[90m•[0m[0m [39m[39mCompiling frontend: [0m[0mDone.
+
+> frontend@0.0.0 dev
+> vite
+
+
+  VITE v4.5.14  ready in 675 ms
+
+[0;92mVite Server URL: http://localhost:5173/[0m
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+[0;92mRunning frontend DevWatcher command: 'npm run dev'[0m
+Building application for development...
+  [90m[90m•[0m[0m [39m[39mGenerating bindings: [0m[0mDone.
+  [90m[90m•[0m[0m [39m[39mCompiling application: [0m[0m# github.com/wailsapp/wails/v2/pkg/assetserver/webview
+# [pkg-config --cflags  -- gtk+-3.0 gio-unix-2.0 webkit2gtk-4.0 gtk+-3.0 gio-unix-2.0 webkit2gtk-4.0 gtk+-3.0 webkit2gtk-4.0]
+Package gtk+-3.0 was not found in the pkg-config search path.
+Perhaps you should add the directory containing `gtk+-3.0.pc'
+to the PKG_CONFIG_PATH environment variable
+Package 'gtk+-3.0', required by 'virtual:world', not found
+Package 'gio-unix-2.0', required by 'virtual:world', not found
+Package 'webkit2gtk-4.0', required by 'virtual:world', not found
+Package 'gtk+-3.0', required by 'virtual:world', not found
+Package 'gio-unix-2.0', required by 'virtual:world', not found
+Package 'webkit2gtk-4.0', required by 'virtual:world', not found
+Package 'gtk+-3.0', required by 'virtual:world', not found
+Package 'webkit2gtk-4.0', required by 'virtual:world', not found
+
+[0;91mBuild error - exit status 1[0m
+[0;33mNo version running, build will be retriggered as soon as changes have been detected[0m
+[0;92mUsing DevServer URL: http://localhost:34115[0m
+[0;92mUsing Frontend DevServer URL: http://localhost:5173/[0m
+[0;92mUsing reload debounce setting of 100 milliseconds[0m
+[0;92mWatching (sub)/directory: /app[0m
+[0;92m
+
+To develop in the browser and call your bound Go methods from Javascript, navigate to: http://localhost:34115[0m
+[0;92mAdded new directory to watcher: /app/frontend/wailsjs/runtime[0m
+[0;92mAdded new directory to watcher: /app/frontend/wailsjs/go[0m
+6:04:19 PM [vite] page reload dist/index.html
+[0;92mAdded new directory to watcher: /app/frontend/wailsjs/runtime[0m
+[0;92mAdded new directory to watcher: /app/build/bin[0m
