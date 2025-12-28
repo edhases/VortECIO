@@ -325,14 +325,15 @@ func (a *App) onSysTrayReady() {
 	mShow := systray.AddMenuItem("Show", "Show the main window")
 	mQuit := systray.AddMenuItem("Quit", "Quit the application")
 
-	for {
-		select {
-		case <-mShow.ClickedCh:
-			runtime.Show(a.ctx)
-		case <-mQuit.ClickedCh:
-			runtime.Quit(a.ctx)
-		}
-	}
+	// Use SetOnClick with callbacks, which is the correct API for energye/systray.
+	// The event loop is handled internally by systray.Run.
+	mShow.SetOnClick(func() {
+		runtime.Show(a.ctx)
+	})
+
+	mQuit.SetOnClick(func() {
+		runtime.Quit(a.ctx)
+	})
 }
 
 // onSysTrayExit is called when the systray is exiting.
