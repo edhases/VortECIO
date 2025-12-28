@@ -1,10 +1,12 @@
 <script>
     import { SetFanMode, SetManualSpeed } from "../../wailsjs/go/main/App";
     import { t } from '../i18n/store.js';
+    import CurveEditor from './CurveEditor.svelte';
 
     export let fan = {};
     export let fanIndex = 0;
 
+    let showCurveEditor = false;
     let modes = ["Auto", "Manual", "Disabled"];
 
     function handleModeChange(event) {
@@ -39,7 +41,16 @@
                     <option value={mode}>{modeTranslations[mode] || mode}</option>
                 {/each}
             </select>
+            {#if fan.Mode === 'Auto'}
+                <button on:click={() => showCurveEditor = !showCurveEditor} class="edit-curve-btn">
+                    {showCurveEditor ? 'Close' : 'Edit Curve'}
+                </button>
+            {/if}
         </div>
+
+        {#if showCurveEditor}
+            <CurveEditor thresholds={fan.TemperatureThresholds} {fanIndex} />
+        {/if}
 
         <div class="control-group slider-group">
             <label for="speed-slider-{fanIndex}">{$t.speed_label}:</label>
