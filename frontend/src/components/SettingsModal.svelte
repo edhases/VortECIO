@@ -1,7 +1,7 @@
 <script>
     import { createEventDispatcher, onMount } from 'svelte';
     import { t } from '../i18n/store.js';
-    import { GetSensorPlugins } from "../../../wailsjs/go/main/App";
+    import { GetSensorPlugins } from "../../wailsjs/go/main/App";
 
     export let settings = {};
 
