@@ -50,16 +50,23 @@ type PublicState struct {
 }
 
 type PublicFanState struct {
-	Name               string  `json:"name"`
-	Mode               FanMode `json:"mode"`
-	ManualSpeed        int     `json:"manualSpeed"`
-	TargetSpeedPercent int     `json:"targetSpeedPercent"`
-	ReadSpeedPercent   int     `json:"readSpeedPercent"`
-	CurrentRPM         int     `json:"currentRpm"`
+	Name                  string                   `json:"name"`
+	Mode                  FanMode                  `json:"mode"`
+	ManualSpeed           int                      `json:"manualSpeed"`
+	TargetSpeedPercent    int                      `json:"targetSpeedPercent"`
+	ReadSpeedPercent      int                      `json:"readSpeedPercent"`
+	CurrentRPM            int                      `json:"currentRpm"`
+	TemperatureThresholds []models.TemperatureThreshold `json:"temperatureThresholds"`
+}
+
+// AppController defines the interface for the main application controller.
+type AppController interface {
+	UpdateTrayTooltip(tooltip string)
 }
 
 // FanController manages the core fan control logic in a separate goroutine.
 type FanController struct {
+	app      AppController     // Reference to the main app to call methods like UpdateTrayTooltip
 	ecDriver hardware.ECDriver // Use the interface
 	config   *models.Config
 	settings SettingsSnapshot
@@ -77,8 +84,9 @@ type FanController struct {
 }
 
 // NewFanController creates a new, uninitialized fan controller.
-func NewFanController(driver hardware.ECDriver) *FanController {
+func NewFanController(app AppController, driver hardware.ECDriver) *FanController {
 	return &FanController{
+		app:      app,
 		ecDriver: driver,
 		settings: SettingsSnapshot{ // Default safety settings
 			CriticalTemp: 80,
@@ -178,6 +186,13 @@ func (fc *FanController) SetManualSpeed(fanIndex int, speed int) error {
 	return nil
 }
 
+// GetConfig safely returns the current configuration.
+func (fc *FanController) GetConfig() *models.Config {
+	fc.stateMutex.RLock()
+	defer fc.stateMutex.RUnlock()
+	return fc.config
+}
+
 // GetPublicState returns a thread-safe snapshot of the current state for UI rendering.
 func (fc *FanController) GetPublicState() PublicState {
 	fc.stateMutex.RLock()
@@ -196,12 +211,13 @@ func (fc *FanController) GetPublicState() PublicState {
 
 	for i, fan := range fc.fanStates {
 		state.Fans[i] = PublicFanState{
-			Name:               fc.config.FanConfigurations[i].FanDisplayName,
-			Mode:               fan.Mode,
-			ManualSpeed:        fan.ManualSpeed,
-			TargetSpeedPercent: fan.TargetSpeedPercent,
-			ReadSpeedPercent:   fan.ReadSpeedPercent,
-			CurrentRPM:         fan.CurrentRPM,
+			Name:                  fc.config.FanConfigurations[i].FanDisplayName,
+			Mode:                  fan.Mode,
+			ManualSpeed:           fan.ManualSpeed,
+			TargetSpeedPercent:    fan.TargetSpeedPercent,
+			ReadSpeedPercent:      fan.ReadSpeedPercent,
+			CurrentRPM:            fan.CurrentRPM,
+			TemperatureThresholds: fc.config.FanConfigurations[i].TemperatureThresholds,
 		}
 	}
 	return state
@@ -337,6 +353,13 @@ func (fc *FanController) tick() {
 			}
 		}
 	}
+
+	// Update tray tooltip with current temperatures
+	tooltip := fmt.Sprintf("CPU: %.1f°C", fc.lastTemp)
+	if fc.lastGpuTemp > 0 {
+		tooltip += fmt.Sprintf(" | GPU: %.1f°C", fc.lastGpuTemp)
+	}
+	fc.app.UpdateTrayTooltip(tooltip)
 }
 
 // isValidRPM checks if an RPM value is within a plausible range.
@@ -360,26 +383,48 @@ func (fc *FanController) releaseAllFansToBios() {
 	}
 }
 
-// calculateSpeedForTemp determines fan speed with hysteresis.
-func calculateSpeedForTemp(temp float64, currentSpeed int, thresholds []models.TemperatureThreshold) int {
-	// Find the highest threshold we are currently at or above
-	for i := len(thresholds) - 1; i >= 0; i-- {
-		t := thresholds[i]
-		if temp >= float64(t.UpThreshold) {
-			return int(t.FanSpeed)
+// calculateSpeedForTemp determines fan speed with proper hysteresis.
+func calculateSpeedForTemp(temp float64, lastSpeed int, thresholds []models.TemperatureThreshold) int {
+	// Determine the current speed level based on the last known speed.
+	// This helps us find the correct DownThreshold to use.
+	currentLevelIndex := -1
+	for i, t := range thresholds {
+		if float64(lastSpeed) == t.FanSpeed {
+			currentLevelIndex = i
+			break
 		}
 	}
 
-	// If below all UpThresholds, find where we are relative to DownThresholds
-	for i, t := range thresholds {
-		if temp < float64(t.DownThreshold) {
-			if i > 0 {
-				return int(thresholds[i-1].FanSpeed)
-			}
-			return 0 // Below the lowest threshold
+	// If temperature is rising
+	// Find the highest threshold that the temperature has crossed from below.
+	newSpeed := 0.0
+	for _, t := range thresholds {
+		if temp >= float64(t.UpThreshold) {
+			newSpeed = t.FanSpeed
 		}
 	}
-	return currentSpeed // Maintain speed if in hysteresis zone
+
+	// If the new speed (from rising temp) is higher than the last speed, we apply it.
+	if newSpeed > float64(lastSpeed) {
+		return int(newSpeed)
+	}
+
+	// If temperature is falling or stable, and we have a current speed level
+	if currentLevelIndex != -1 {
+		// Check if the temperature has dropped below the DownThreshold for the *current* level.
+		currentThreshold := thresholds[currentLevelIndex]
+		if temp < float64(currentThreshold.DownThreshold) {
+			// If it has, we can safely drop to the speed of the *next lower* level.
+			if currentLevelIndex > 0 {
+				return int(thresholds[currentLevelIndex-1].FanSpeed)
+			}
+			return 0 // We were at the lowest level, so now we turn off.
+		}
+	}
+
+	// If none of the above conditions are met, maintain the last speed.
+	// This covers the hysteresis zone (between DownThreshold and UpThreshold).
+	return lastSpeed
 }
 
 // scaleSpeedToECValue converts a 0-100 percentage to the raw EC value.

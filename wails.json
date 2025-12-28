@@ -13,6 +13,9 @@
   "windows": {
     "nsis": {
       "RequestAdminPrivileges": true
+    },
+    "options": {
+      "HideOnClose": true
     }
   }
 }

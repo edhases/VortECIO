@@ -20,11 +20,13 @@ import (
 
 // App struct holds the application's state and dependencies.
 type App struct {
-	ctx           context.Context
-	ecDriver      *hardware.EcDriver
-	fanController *controller.FanController
-	settings      models.Settings
-	settingsPath  string
+	ctx            context.Context
+	ecDriver       hardware.ECDriver
+	fanController  *controller.FanController
+	settings       models.Settings
+	settingsPath   string
+	userProfiles   models.UserProfiles
+	userProfilesPath string
 }
 
 // NewApp creates a new App application struct.
@@ -41,7 +43,9 @@ func (a *App) startup(ctx context.Context) {
 	if err != nil {
 		log.Printf("Warning: could not determine executable path: %v", err)
 	}
-	a.settingsPath = filepath.Join(filepath.Dir(exePath), "settings.json")
+	baseDir := filepath.Dir(exePath)
+	a.settingsPath = filepath.Join(baseDir, "settings.json")
+	a.userProfilesPath = filepath.Join(baseDir, "user_profiles.json")
 
 	// Load settings or create default
 	if err := a.loadSettings(); err != nil {
@@ -58,6 +62,12 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}
 
+	// Load user profiles
+	if err := a.loadUserProfiles(); err != nil {
+		log.Printf("Could not load user profiles, starting with empty set: %v", err)
+		a.userProfiles = make(models.UserProfiles)
+	}
+
 	// Initialize the EC driver
 	driver, err := hardware.NewEcDriver()
 	if err != nil {
@@ -69,7 +79,7 @@ func (a *App) startup(ctx context.Context) {
 		os.Exit(1)
 	}
 	a.ecDriver = driver
-	a.fanController = controller.NewFanController(a.ecDriver)
+	a.fanController = controller.NewFanController(a, a.ecDriver)
 	a.fanController.UpdateSettings(&a.settings) // Pass initial settings to controller
 
 	// Try to auto-load last config
@@ -141,12 +151,107 @@ func (a *App) SaveAppSettings(newSettings models.Settings) error {
 	return a.saveSettingsToFile()
 }
 
+// SaveFanCurve saves a user-defined fan curve for the currently loaded model.
+func (a *App) SaveFanCurve(fanIndex int, thresholds []models.TemperatureThreshold) error {
+	config := a.fanController.GetConfig() // Assuming FanController has a method to get the current config
+	if config == nil || config.ModelName == "" {
+		return fmt.Errorf("no config loaded, cannot save fan curve")
+	}
+
+	modelName := config.ModelName
+	fanIndexStr := fmt.Sprintf("%d", fanIndex)
+
+	if _, ok := a.userProfiles[modelName]; !ok {
+		a.userProfiles[modelName] = make(map[string]models.UserProfile)
+	}
+
+	a.userProfiles[modelName][fanIndexStr] = models.UserProfile{
+		TemperatureThresholds: thresholds,
+	}
+
+	// Reload the entire config with the new override applied
+	if a.settings.LastConfigPath != "" {
+		_, err := a.loadConfigFile(a.settings.LastConfigPath)
+		if err != nil {
+			return fmt.Errorf("failed to reload config with new curve: %w", err)
+		}
+	}
+
+	return a.saveUserProfilesToFile()
+}
+
+// ResetFanCurve removes a user-defined fan curve for the currently loaded model.
+// UpdateTrayTooltip sets the tooltip for the system tray icon.
+func (a *App) UpdateTrayTooltip(tooltip string) {
+	runtime.TraySetTooltip(a.ctx, tooltip)
+}
+
+func (a *App) ResetFanCurve(fanIndex int) error {
+	config := a.fanController.GetConfig()
+	if config == nil || config.ModelName == "" {
+		return fmt.Errorf("no config loaded, cannot reset fan curve")
+	}
+
+	modelName := config.ModelName
+	fanIndexStr := fmt.Sprintf("%d", fanIndex)
+
+	if modelProfiles, ok := a.userProfiles[modelName]; ok {
+		delete(modelProfiles, fanIndexStr)
+		if len(modelProfiles) == 0 {
+			delete(a.userProfiles, modelName)
+		}
+	}
+
+	// Reload the entire config to revert to XML defaults
+	if a.settings.LastConfigPath != "" {
+		_, err := a.loadConfigFile(a.settings.LastConfigPath)
+		if err != nil {
+			return fmt.Errorf("failed to reload config after reset: %w", err)
+		}
+	}
+
+	return a.saveUserProfilesToFile()
+}
+
 // --- Helper methods ---
+
+func (a *App) loadUserProfiles() error {
+	if _, err := os.Stat(a.userProfilesPath); os.IsNotExist(err) {
+		a.userProfiles = make(models.UserProfiles)
+		return nil // File doesn't exist, which is fine
+	}
+	data, err := os.ReadFile(a.userProfilesPath)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, &a.userProfiles)
+}
+
+func (a *App) saveUserProfilesToFile() error {
+	data, err := json.MarshalIndent(a.userProfiles, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(a.userProfilesPath, data, 0644)
+}
 
 func (a *App) loadConfigFile(path string) (controller.PublicState, error) {
 	config, err := utils.LoadConfigFromXML(path)
 	if err != nil {
 		return controller.PublicState{}, err // Pass the error up
+	}
+
+	// Apply user profile override if it exists
+	if modelProfiles, ok := a.userProfiles[config.ModelName]; ok {
+		log.Printf("Found user profile for model '%s'. Applying overrides.", config.ModelName)
+		for i, fanConfig := range config.FanConfigurations {
+			fanIndexStr := fmt.Sprintf("%d", i)
+			if userFanProfile, ok := modelProfiles[fanIndexStr]; ok {
+				fanConfig.TemperatureThresholds = userFanProfile.TemperatureThresholds
+				config.FanConfigurations[i] = fanConfig
+				log.Printf("-> Applied custom curve to Fan %d", i)
+			}
+		}
 	}
 
 	a.fanController.LoadConfig(config)
