@@ -1,7 +1,7 @@
 <script>
     import { createEventDispatcher, onMount } from 'svelte';
     import { t } from '../i18n/store.js';
-    // import { GetSensorPlugins } from "../../wailsjs/go/main/App"; // Temporarily disabled due to build issue
+    import { GetSensorPlugins } from "../../wailsjs/go/main/App";
 
     export let settings = {};
 
@@ -12,9 +12,9 @@
 
     onMount(() => {
         initialPluginID = settings.sensorProviderPluginID;
-        // GetSensorPlugins().then(plugins => { // Temporarily disabled due to build issue
-        //     sensorPlugins = plugins;
-        // });
+        GetSensorPlugins().then(plugins => {
+            sensorPlugins = plugins;
+        });
     });
 
     function handleSave() {
@@ -43,6 +43,9 @@
             <select id="language" bind:value={settings.language}>
                 <option value="en">English</option>
                 <option value="ua">Українська</option>
+                <option value="de">Deutsch</option>
+                <option value="pl">Polski</option>
+                <option value="ja">日本語</option>
             </select>
         </div>
 
@@ -54,7 +57,7 @@
         <hr>
 
         <div class="form-group">
-            <label for="sensor-provider">CPU Sensor Source</label>
+            <label for="sensor-provider">{$t.cpu_sensor_source}</label>
             <select id="sensor-provider" bind:value={settings.sensorProviderPluginID}>
                 <option value="">WMI (System)</option>
                 {#each sensorPlugins as plugin}

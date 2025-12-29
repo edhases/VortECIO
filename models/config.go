@@ -23,7 +23,7 @@ type FanConfiguration struct {
 	MaxSpeedValue         int                    `xml:"MaxSpeedValue"`
 	ResetRequired         bool                   `xml:"ResetRequired"`
 	FanSpeedResetValue    int                    `xml:"FanSpeedResetValue"`
-	FanDisplayName        string                 `xml:"FanDisplayName"`
+	FanDisplayName        string                 `xml:"Name"` // Corrected tag
 	TemperatureThresholds []TemperatureThreshold `xml:"TemperatureThresholds>TemperatureThreshold"`
 }
 

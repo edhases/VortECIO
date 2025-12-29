@@ -31,17 +31,17 @@
 
 <div class="fan-card">
     <div class="fan-header">
-        <span class="fan-name">{fan.Name || 'Unnamed Fan'}</span>
+        <span class="fan-name">{fan.name || 'Unnamed Fan'}</span>
     </div>
     <div class="fan-controls">
         <div class="control-group">
             <label for="mode-select-{fanIndex}">{$t.mode_label}:</label>
-            <select id="mode-select-{fanIndex}" value={fan.Mode} on:change={handleModeChange}>
+            <select id="mode-select-{fanIndex}" value={fan.mode} on:change={handleModeChange}>
                 {#each modes as mode}
                     <option value={mode}>{modeTranslations[mode] || mode}</option>
                 {/each}
             </select>
-            {#if fan.Mode === 'Auto'}
+            {#if fan.mode === 'Auto'}
                 <button on:click={() => showCurveEditor = !showCurveEditor} class="edit-curve-btn">
                     {showCurveEditor ? 'Close' : 'Edit Curve'}
                 </button>
@@ -49,7 +49,7 @@
         </div>
 
         {#if showCurveEditor}
-            <CurveEditor thresholds={fan.TemperatureThresholds} {fanIndex} />
+            <CurveEditor thresholds={fan.temperatureThresholds} {fanIndex} />
         {/if}
 
         <div class="control-group slider-group">
@@ -59,12 +59,12 @@
                 id="speed-slider-{fanIndex}"
                 min="0"
                 max="100"
-                value={fan.ManualSpeed}
+                value={fan.manualSpeed}
                 on:input={handleSpeedChange}
-                disabled={fan.Mode !== 'Manual'}
+                disabled={fan.mode !== 'Manual'}
             />
             <span class="speed-label">
-                {fan.Mode === 'Manual' ? fan.ManualSpeed + '%' : (fan.ReadSpeedPercent < 0 ? 'N/A' : fan.ReadSpeedPercent + '%')}
+                {fan.mode === 'Manual' ? fan.manualSpeed + '%' : (fan.readSpeedPercent < 0 ? 'N/A' : fan.readSpeedPercent + '%')}
                 {#if fan.currentRpm > 0}
                     <span class="rpm-label">{fan.currentRpm} RPM</span>
                 {/if}

@@ -13,10 +13,16 @@
   "settings_title": "アプリケーション設定",
   "lang_label": "言語",
   "autostart_label": "起動時に実行",
+  "cpu_sensor_source": "CPU Sensor Source",
   "critical_temp_label": "危険温度 (°C)",
   "safety_action_label": "安全アクション",
   "action_bios": "BIOSに解放",
   "action_max": "100%速度を強制",
+  "settings_enable_recovery": "Enable recovery from critical state",
+  "settings_recovery_delta": "Recovery Temp Delta (°C)",
+  "settings_recovery_delta_hint": "Temp must drop this much below critical before auto-mode resumes.",
   "save_btn": "保存",
-  "cancel_btn": "キャンセル"
+  "cancel_btn": "キャンセル",
+  "dashboard_tab": "ダッシュボード",
+  "system_info_tab": "システム情報"
 }

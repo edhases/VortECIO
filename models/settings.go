@@ -1,14 +1,14 @@
 package models
 
-// Settings holds the user-configurable application settings.
-// These are stored in settings.json.
+// Settings defines the structure for the application's configuration file (settings.json).
+// It holds user preferences and the state of the application.
 type Settings struct {
-	Language                   string `json:"language"`
-	AutoStart                  bool   `json:"autoStart"`
-	LastConfigPath             string `json:"lastConfigPath"`
-	CriticalTemp               int    `json:"criticalTemp"`
-	SafetyAction               string `json:"safetyAction"`
-	EnableCriticalTempRecovery bool   `json:"enableCriticalTempRecovery"`
-	CriticalTempRecoveryDelta  int    `json:"criticalTempRecoveryDelta"`
-	SensorProviderPluginID     string `json:"sensorProviderPluginID"` // ID of the selected sensor plugin
+	Language                    string `json:"language"`
+	AutoStart                   bool   `json:"autoStart"`
+	LastConfigPath              string `json:"lastConfigPath"`
+	CriticalTemp                int    `json:"criticalTemp"`
+	SafetyAction                string `json:"safetyAction"`
+	SensorProviderPluginID      string `json:"sensorProviderPluginID"`
+	EnableCriticalTempRecovery  bool   `json:"enableCriticalTempRecovery"`
+	CriticalTempRecoveryDelta   int    `json:"criticalTempRecoveryDelta"`
 }

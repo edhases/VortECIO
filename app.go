@@ -6,14 +6,16 @@ import (
 	"VortECIO-Go/controller"
 	"VortECIO-Go/hardware"
 	"VortECIO-Go/models"
+	"VortECIO-Go/sensors"
 	"VortECIO-Go/services"
-	"VortECIO-Go/utils" // Import the new utils package
+	"VortECIO-Go/utils"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -131,7 +133,7 @@ func (a *App) startup(ctx context.Context) {
 	if a.settings.LastConfigPath != "" {
 		log.Printf("Found last config path: %s", a.settings.LastConfigPath)
 		if _, err := os.Stat(a.settings.LastConfigPath); err == nil {
-			a.loadConfigFile(a.settings.LastConfigPath)
+			a.loadConfigFile(a.settings.LastConfigPath, true) // isAutoLoad = true
 		} else {
 			log.Printf("Warning: last config file not found at %s", a.settings.LastConfigPath)
 		}
@@ -164,7 +166,7 @@ func (a *App) LoadConfig() (controller.PublicState, error) {
 		return controller.PublicState{}, nil // User cancelled
 	}
 
-	return a.loadConfigFile(selection)
+	return a.loadConfigFile(selection, false) // isAutoLoad = false
 }
 
 // GetState returns the current state of the fan controller to the frontend.
@@ -203,7 +205,7 @@ func (a *App) SaveAppSettings(newSettings models.Settings) error {
 
 // SaveFanCurve saves a user-defined fan curve for the currently loaded model.
 func (a *App) SaveFanCurve(fanIndex int, thresholds []models.TemperatureThreshold) error {
-	config := a.fanController.GetConfig() // Assuming FanController has a method to get the current config
+	config := a.fanController.GetConfig()
 	if config == nil || config.ModelName == "" {
 		return fmt.Errorf("no config loaded, cannot save fan curve")
 	}
@@ -221,7 +223,7 @@ func (a *App) SaveFanCurve(fanIndex int, thresholds []models.TemperatureThreshol
 
 	// Reload the entire config with the new override applied
 	if a.settings.LastConfigPath != "" {
-		_, err := a.loadConfigFile(a.settings.LastConfigPath)
+		_, err := a.loadConfigFile(a.settings.LastConfigPath, true)
 		if err != nil {
 			return fmt.Errorf("failed to reload config with new curve: %w", err)
 		}
@@ -249,7 +251,7 @@ func (a *App) ResetFanCurve(fanIndex int) error {
 
 	// Reload the entire config to revert to XML defaults
 	if a.settings.LastConfigPath != "" {
-		_, err := a.loadConfigFile(a.settings.LastConfigPath)
+		_, err := a.loadConfigFile(a.settings.LastConfigPath, true)
 		if err != nil {
 			return fmt.Errorf("failed to reload config after reset: %w", err)
 		}
@@ -263,7 +265,7 @@ func (a *App) ResetFanCurve(fanIndex int) error {
 func (a *App) loadUserProfiles() error {
 	if _, err := os.Stat(a.userProfilesPath); os.IsNotExist(err) {
 		a.userProfiles = make(models.UserProfiles)
-		return nil // File doesn't exist, which is fine
+		return nil
 	}
 	data, err := os.ReadFile(a.userProfilesPath)
 	if err != nil {
@@ -280,10 +282,38 @@ func (a *App) saveUserProfilesToFile() error {
 	return os.WriteFile(a.userProfilesPath, data, 0644)
 }
 
-func (a *App) loadConfigFile(path string) (controller.PublicState, error) {
+func (a *App) loadConfigFile(path string, isAutoLoad bool) (controller.PublicState, error) {
 	config, err := utils.LoadConfigFromXML(path)
 	if err != nil {
-		return controller.PublicState{}, err // Pass the error up
+		return controller.PublicState{}, fmt.Errorf("failed to parse XML config: %w", err)
+	}
+
+	// Safety Check: Compare SMBIOS model with the model in the config
+	systemModel, err := sensors.GetSystemModel()
+	if err != nil {
+		log.Printf("Warning: Could not get system model via SMBIOS: %v", err)
+	} else {
+		// Be lenient in the comparison
+		configModelClean := strings.ReplaceAll(strings.ToLower(config.ModelName), " ", "")
+		systemModelClean := strings.ReplaceAll(strings.ToLower(systemModel), " ", "")
+
+		if !strings.Contains(systemModelClean, configModelClean) {
+			warningMsg := fmt.Sprintf("Model Mismatch Warning!\n\nSystem Model: %s\nConfig Model: %s\n\nUsing a config for a different model can be dangerous. Do you want to proceed?", systemModel, config.ModelName)
+			dialogOpts := runtime.MessageDialogOptions{
+				Type:    runtime.QuestionDialog,
+				Title:   "Model Mismatch",
+				Message: warningMsg,
+			}
+			// Don't show the interactive dialog on startup, just log it.
+			if isAutoLoad {
+				log.Println(strings.ReplaceAll(warningMsg, "\n\n", " | "))
+			} else {
+				result, err := runtime.MessageDialog(a.ctx, dialogOpts)
+				if err != nil || result != "Yes" {
+					return controller.PublicState{}, fmt.Errorf("config load cancelled by user due to model mismatch")
+				}
+			}
+		}
 	}
 
 	// Apply user profile override if it exists
@@ -302,7 +332,6 @@ func (a *App) loadConfigFile(path string) (controller.PublicState, error) {
 	a.fanController.LoadConfig(config)
 	a.fanController.Start()
 
-	// Save the path for next launch
 	a.settings.LastConfigPath = path
 	if err := a.saveSettingsToFile(); err != nil {
 		log.Printf("Warning: failed to save settings: %v", err)
@@ -328,7 +357,6 @@ func (a *App) saveSettingsToFile() error {
 	return os.WriteFile(a.settingsPath, data, 0644)
 }
 
-// SetAutoStart adds or removes the application from the Windows startup registry.
 func (a *App) SetAutoStart(enabled bool) error {
 	const appName = "VortECIO-Go"
 	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE|registry.QUERY_VALUE)
@@ -342,13 +370,14 @@ func (a *App) SetAutoStart(enabled bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to get executable path: %w", err)
 		}
-		// Set the value to the path of the executable, enclosed in quotes.
 		return key.SetStringValue(appName, `"`+exePath+`"`)
 	}
 
-	// If not enabled, delete the key.
-	// It's safe to call DeleteValue even if the value doesn't exist.
-	return key.DeleteValue(appName)
+	err = key.DeleteValue(appName)
+	if err != nil && err != registry.ErrNotExist {
+		return err // Only return error if it's not a "not found" error
+	}
+	return nil
 }
 
 // runSysTray initializes and runs the system tray icon and menu.
@@ -358,8 +387,6 @@ func (a *App) runSysTray() {
 
 // onSysTrayReady is called when the systray is ready.
 func (a *App) onSysTrayReady() {
-	// For simplicity, we assume the icon is in the build directory.
-	// A more robust solution would embed it or use a relative path.
 	iconBytes, err := os.ReadFile("frontend/src/assets/images/logo-universal.png")
 	if err != nil {
 		log.Printf("Warning: could not load tray icon: %v", err)
@@ -373,7 +400,6 @@ func (a *App) onSysTrayReady() {
 	mShow := systray.AddMenuItem("Show", "Show the main window")
 	mQuit := systray.AddMenuItem("Quit", "Quit the application")
 
-	// Handle menu item clicks in a separate goroutine
 	go func() {
 		for {
 			select {
@@ -381,16 +407,14 @@ func (a *App) onSysTrayReady() {
 				runtime.Show(a.ctx)
 			case <-mQuit.ClickedCh:
 				runtime.Quit(a.ctx)
-				return // Exit the goroutine
+				return
 			}
 		}
 	}()
 }
 
 // onSysTrayExit is called when the systray is exiting.
-func (a *App) onSysTrayExit() {
-	// Cleanup tasks can be performed here
-}
+func (a *App) onSysTrayExit() {}
 
 // UpdateTrayTooltip is the new, correct implementation for updating the tooltip.
 func (a *App) UpdateTrayTooltip(tooltip string) {

@@ -13,10 +13,16 @@
   "settings_title": "Anwendungseinstellungen",
   "lang_label": "Sprache",
   "autostart_label": "Beim Start ausführen",
+  "cpu_sensor_source": "CPU Sensor Source",
   "critical_temp_label": "Kritische Temperatur (°C)",
   "safety_action_label": "Sicherheitsaktion",
   "action_bios": "An BIOS übergeben",
   "action_max": "100% Geschwindigkeit erzwingen",
+  "settings_enable_recovery": "Enable recovery from critical state",
+  "settings_recovery_delta": "Recovery Temp Delta (°C)",
+  "settings_recovery_delta_hint": "Temp must drop this much below critical before auto-mode resumes.",
   "save_btn": "Speichern",
-  "cancel_btn": "Abbrechen"
+  "cancel_btn": "Abbrechen",
+  "dashboard_tab": "Dashboard",
+  "system_info_tab": "System Info"
 }
