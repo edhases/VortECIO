@@ -3,8 +3,10 @@
 package hardware
 
 import (
+	"VortECIO-Go/utils"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -30,14 +32,20 @@ type EcDriver struct {
 // NewEcDriver attempts to load inpoutx64.dll and initializes the driver.
 // It returns an error if the DLL cannot be loaded or procedures are not found.
 func NewEcDriver() (*EcDriver, error) {
-	// First, check if the DLL file exists in the current directory.
-	if _, err := os.Stat(dllName); os.IsNotExist(err) {
-		return nil, fmt.Errorf("critical driver file not found: %s. Please ensure it is in the same directory as the application", dllName)
+	baseDir, err := utils.GetBaseDir()
+	if err != nil {
+		return nil, fmt.Errorf("could not determine application base directory: %w", err)
+	}
+	dllPath := filepath.Join(baseDir, dllName)
+
+	// First, check if the DLL file exists in the correct directory.
+	if _, err := os.Stat(dllPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("critical driver file not found at '%s'. Please ensure it is in the same directory as the application", dllPath)
 	}
 
-	dll := syscall.NewLazyDLL(dllName)
+	dll := syscall.NewLazyDLL(dllPath)
 	if err := dll.Load(); err != nil {
-		return nil, fmt.Errorf("critical: failed to load %s: %w. This may be due to antivirus software or missing permissions", dllName, err)
+		return nil, fmt.Errorf("critical: failed to load %s: %w. This may be due to antivirus software or missing permissions (try running as Administrator and unblocking the file in its properties)", dllName, err)
 	}
 
 	out32 := dll.NewProc("Out32")

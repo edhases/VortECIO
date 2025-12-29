@@ -37,6 +37,7 @@ type FanState struct {
 	ManualSpeed         int // User-set percentage (0-100) for Manual mode
 	TargetSpeedPercent  int // The speed calculated by the fan curve
 	CurrentSpeed        int // The smoothed speed being written to the EC
+	LastWrittenSpeed    int // The last speed value written to the EC, to prevent spam
 	ReadSpeedPercent    int // Speed percentage read back from the EC
 	CurrentRPM          int // Actual RPM read from the sensor
 	LastValidRPM        int // Used for spike filter
@@ -76,20 +77,25 @@ type AppController interface {
 
 // FanController manages the core fan control logic in a separate goroutine.
 type FanController struct {
-	ecDriver                 hardware.ECDriver // Use the interface
-	config                   *models.Config
-	settings                 SettingsSnapshot
-	sensorSource             SensorSource
-	onTempUpdate             func(tooltip string) // Callback to update UI elements like tray tooltip
-	fanStates                []FanState
-	inCriticalState          bool // Flag to track if we are in a critical temp state
-	stateMutex               sync.RWMutex
+	ecDriver hardware.ECDriver
+	config   *models.Config
+	settings SettingsSnapshot
+
+	fanStates       []FanState
+	inCriticalState bool // Flag to track if we are in a critical temp state
+
 	lastTemp                 float64
 	lastGpuTemp              float64
 	lastSuccessfulTempUpdate time.Time
-	ctx                      context.Context
-	cancel                   context.CancelFunc
-	wg                       sync.WaitGroup
+
+	sensorSource SensorSource
+
+	onTempUpdate func(tooltip string) // Callback to update UI elements like tray tooltip
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	mutex  sync.RWMutex // Mutex to protect all shared state
 }
 
 // NewFanController creates a new, uninitialized fan controller.
@@ -109,8 +115,8 @@ func NewFanController(ctx context.Context, driver hardware.ECDriver, onTempUpdat
 
 // UpdateSettings safely updates the controller's settings from the main app.
 func (fc *FanController) UpdateSettings(newSettings *models.Settings) {
-	fc.stateMutex.Lock()
-	defer fc.stateMutex.Unlock()
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
 	fc.settings.CriticalTemp = newSettings.CriticalTemp
 	fc.settings.SafetyAction = newSettings.SafetyAction
 	fc.settings.EnableCriticalTempRecovery = newSettings.EnableCriticalTempRecovery
@@ -121,10 +127,15 @@ func (fc *FanController) UpdateSettings(newSettings *models.Settings) {
 
 // LoadConfig applies a new configuration and initializes the fan states.
 func (fc *FanController) LoadConfig(config *models.Config) {
-	fc.stateMutex.Lock()
-	defer fc.stateMutex.Unlock()
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
 
-	fc.Stop() // Stop any previous control loop
+	// Stop any previous control loop before loading new config
+	if fc.cancel != nil {
+		fc.cancel()
+		fc.wg.Wait()
+		fc.cancel = nil
+	}
 
 	// Pre-sort temperature thresholds for performance
 	for i := range config.FanConfigurations {
@@ -142,7 +153,7 @@ func (fc *FanController) LoadConfig(config *models.Config) {
 		}
 	}
 
-	// Update tray tooltip with current temperatures
+	// Initial tooltip update
 	tooltip := fmt.Sprintf("CPU: %.1f°C", fc.lastTemp)
 	if fc.lastGpuTemp > 0 {
 		tooltip += fmt.Sprintf(" | GPU: %.1f°C", fc.lastGpuTemp)
@@ -154,14 +165,18 @@ func (fc *FanController) LoadConfig(config *models.Config) {
 
 // Start launches the main control loop in a background goroutine.
 func (fc *FanController) Start() {
-	fc.stateMutex.Lock()
-	defer fc.stateMutex.Unlock()
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
 
 	if fc.config == nil || fc.cancel != nil {
-		return // Not configured or already running
+		log.Println("Fan Controller cannot start: not configured or already running.")
+		return
 	}
 
-	fc.ctx, fc.cancel = context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	fc.ctx = ctx
+	fc.cancel = cancel
+
 	fc.wg.Add(1)
 	go fc.controlLoop()
 	log.Println("Fan Controller started.")
@@ -169,6 +184,9 @@ func (fc *FanController) Start() {
 
 // Stop gracefully terminates the control loop.
 func (fc *FanController) Stop() {
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
+
 	if fc.cancel != nil {
 		fc.cancel()
 		fc.wg.Wait()
@@ -179,8 +197,8 @@ func (fc *FanController) Stop() {
 
 // SetFanMode updates the operating mode for a specific fan.
 func (fc *FanController) SetFanMode(fanIndex int, mode FanMode) error {
-	fc.stateMutex.Lock()
-	defer fc.stateMutex.Unlock()
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
 	if fanIndex < 0 || fanIndex >= len(fc.fanStates) {
 		return fmt.Errorf("invalid fan index: %d", fanIndex)
 	}
@@ -194,8 +212,8 @@ func (fc *FanController) SetFanMode(fanIndex int, mode FanMode) error {
 
 // SetManualSpeed sets the target speed for a fan in Manual mode.
 func (fc *FanController) SetManualSpeed(fanIndex int, speed int) error {
-	fc.stateMutex.Lock()
-	defer fc.stateMutex.Unlock()
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
 	if fanIndex < 0 || fanIndex >= len(fc.fanStates) {
 		return fmt.Errorf("invalid fan index: %d", fanIndex)
 	}
@@ -211,15 +229,15 @@ func (fc *FanController) SetManualSpeed(fanIndex int, speed int) error {
 
 // GetConfig safely returns the current configuration.
 func (fc *FanController) GetConfig() *models.Config {
-	fc.stateMutex.RLock()
-	defer fc.stateMutex.RUnlock()
+	fc.mutex.RLock()
+	defer fc.mutex.RUnlock()
 	return fc.config
 }
 
 // SetSensorSource safely switches the temperature data source.
 func (fc *FanController) SetSensorSource(source SensorSource) {
-	fc.stateMutex.Lock()
-	defer fc.stateMutex.Unlock()
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
 	if fc.sensorSource != source {
 		log.Printf("Switching sensor source from %s to %s", fc.sensorSource, source)
 		fc.sensorSource = source
@@ -230,8 +248,9 @@ func (fc *FanController) SetSensorSource(source SensorSource) {
 
 // UpdateTemperatures is called by the MonitorService to push new temperature data.
 func (fc *FanController) UpdateTemperatures(cpuTemp, gpuTemp float32) {
-	fc.stateMutex.Lock()
-	defer fc.stateMutex.Unlock()
+	// This method is called from another goroutine, so it needs to lock.
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
 
 	// This method should only be active if the source is the sidecar
 	if fc.sensorSource == SensorSourceSidecar {
@@ -243,11 +262,15 @@ func (fc *FanController) UpdateTemperatures(cpuTemp, gpuTemp float32) {
 
 // GetPublicState returns a thread-safe snapshot of the current state for UI rendering.
 func (fc *FanController) GetPublicState() PublicState {
-	fc.stateMutex.RLock()
-	defer fc.stateMutex.RUnlock()
+	fc.mutex.RLock()
+	defer fc.mutex.RUnlock()
 
 	if fc.config == nil {
-		return PublicState{}
+		// Return a default state instead of an empty one to prevent UI issues on startup
+		return PublicState{
+			ModelName: "Loading configuration...",
+			Fans:      []PublicFanState{},
+		}
 	}
 
 	state := PublicState{
@@ -275,10 +298,14 @@ func (fc *FanController) GetPublicState() PublicState {
 func (fc *FanController) controlLoop() {
 	defer fc.wg.Done()
 
+	fc.mutex.RLock()
+	config := fc.config
+	fc.mutex.RUnlock()
+
 	// Use config's poll interval, with a fallback
 	interval := time.Duration(1000) * time.Millisecond
-	if fc.config != nil && fc.config.EcPollInterval > 0 {
-		interval = time.Duration(fc.config.EcPollInterval) * time.Millisecond
+	if config != nil && config.EcPollInterval > 0 {
+		interval = time.Duration(config.EcPollInterval) * time.Millisecond
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -296,18 +323,38 @@ func (fc *FanController) controlLoop() {
 
 // tick performs a single control cycle.
 func (fc *FanController) tick() {
-	// Step 1: Handle temperature reading based on the current source.
-	// WMI is polled, Sidecar data is pushed.
-	if fc.sensorSource == SensorSourceWMI {
+	// Step 1: Read temperature and hardware state WITHOUT holding the lock.
+	// This is the slowest part and should not block UI updates.
+	var currentTemp, currentGpuTemp float64
+	var tempErr error
+	var sensorSource SensorSource
+
+	fc.mutex.RLock()
+	sensorSource = fc.sensorSource
+	fc.mutex.RUnlock()
+
+	if sensorSource == SensorSourceWMI {
 		temps, err := sensors.GetSystemTemperatures()
 		if err != nil {
-			log.Printf("Warning: Failed to read temperature from WMI: %v", err)
+			tempErr = err
 		} else {
-			fc.stateMutex.Lock()
-			fc.lastTemp = temps.MaxCpuTemp
-			fc.lastGpuTemp = temps.GpuTemp
+			currentTemp = temps.MaxCpuTemp
+			currentGpuTemp = temps.GpuTemp
+		}
+	}
+
+	// --- Step 2: Now, acquire the main lock to update the state and make decisions. ---
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
+
+	// If using WMI, update the controller's internal state with the just-read values.
+	if sensorSource == SensorSourceWMI {
+		if tempErr != nil {
+			log.Printf("Warning: Failed to read temperature from WMI: %v", tempErr)
+		} else {
+			fc.lastTemp = currentTemp
+			fc.lastGpuTemp = currentGpuTemp
 			fc.lastSuccessfulTempUpdate = time.Now()
-			fc.stateMutex.Unlock()
 		}
 	}
 
@@ -320,28 +367,21 @@ func (fc *FanController) tick() {
 		fc.onTempUpdate(tooltip)
 	}
 
-	// Step 2: Lock the mutex for the rest of the tick.
-	fc.stateMutex.Lock()
-	defer fc.stateMutex.Unlock()
-
-	// Watchdog: Check for stale data regardless of source.
+	// Watchdog: Check for stale data.
 	if !fc.lastSuccessfulTempUpdate.IsZero() && time.Since(fc.lastSuccessfulTempUpdate) > 20*time.Second {
 		log.Printf("CRITICAL: Temperature data is stale for >20s. Forcing fans to 100%%.")
 		for i := range fc.fanStates {
 			fc.fanStates[i].Mode = ModeManual
 			fc.fanStates[i].ManualSpeed = 100
 		}
-		// Skip the rest of the tick to avoid acting on stale data
-		return
+		// Don't return yet, we still need to write the new 100% speed below.
 	}
 
 	effectiveTemp := math.Max(fc.lastTemp, fc.lastGpuTemp)
-
-	// Critical Temperature Safety Logic
 	recoveryThreshold := float64(fc.settings.CriticalTemp - fc.settings.CriticalTempRecoveryDelta)
 
+	// Critical Temperature Safety Logic
 	if fc.inCriticalState {
-		// If in critical state, check if we should recover
 		if fc.settings.EnableCriticalTempRecovery && effectiveTemp < recoveryThreshold {
 			log.Printf("INFO: Temperature %.1f°C is below recovery threshold of %.1f°C. Restoring Auto mode.", effectiveTemp, recoveryThreshold)
 			for i := range fc.fanStates {
@@ -350,12 +390,12 @@ func (fc *FanController) tick() {
 			fc.inCriticalState = false
 		}
 	} else {
-		// If not in critical state, check if we should enter it
 		if effectiveTemp > float64(fc.settings.CriticalTemp) {
 			log.Printf("CRITICAL: Temp %.1f°C exceeds %d°C. Action: %s", effectiveTemp, fc.settings.CriticalTemp, fc.settings.SafetyAction)
 			fc.inCriticalState = true
 			if fc.settings.SafetyAction == "bios_control" {
-				fc.releaseAllFansToBios()
+				// The actual write happens outside the lock
+				defer fc.releaseAllFansToBios()
 				for i := range fc.fanStates {
 					fc.fanStates[i].Mode = ModeDisabled
 				}
@@ -373,6 +413,8 @@ func (fc *FanController) tick() {
 		return
 	}
 
+	// The rest of the function (reading RPM and writing speed) also involves I/O,
+	// but it's much faster and state-dependent, so we do it inside the lock for consistency.
 	// --- Pass 1: Read RPM and current speed for all fans ---
 	for i, fanConfig := range fc.config.FanConfigurations {
 		state := &fc.fanStates[i]
@@ -407,9 +449,8 @@ func (fc *FanController) tick() {
 			state.biosControlReleased = false
 		case ModeReadOnly, ModeDisabled:
 			if !state.biosControlReleased && fanConfig.ResetRequired {
-				if err := fc.ecDriver.Write(fanConfig.WriteRegister, byte(fanConfig.FanSpeedResetValue)); err != nil {
-					log.Printf("Error releasing fan %d to BIOS control: %v", i, err)
-				}
+				// Defer the write to outside the lock if possible, though it's quick
+				fc.ecDriver.Write(fanConfig.WriteRegister, byte(fanConfig.FanSpeedResetValue))
 				state.biosControlReleased = true
 			}
 			continue
@@ -423,15 +464,16 @@ func (fc *FanController) tick() {
 			state.CurrentSpeed = max(state.CurrentSpeed-smoothingStep, state.TargetSpeedPercent)
 		}
 
-		ecValue := scaleSpeedToECValue(state.CurrentSpeed, fanConfig.MinSpeedValue, fanConfig.MaxSpeedValue)
 		// Only write if the value is different to avoid unnecessary EC communication
-		if state.CurrentSpeed != state.ReadSpeedPercent {
+		if state.CurrentSpeed != state.LastWrittenSpeed {
+			ecValue := scaleSpeedToECValue(state.CurrentSpeed, fanConfig.MinSpeedValue, fanConfig.MaxSpeedValue)
 			if err := fc.ecDriver.Write(fanConfig.WriteRegister, ecValue); err != nil {
 				log.Printf("Error writing to EC for fan %d: %v", i, err)
+			} else {
+				state.LastWrittenSpeed = state.CurrentSpeed // Update last written speed on success
 			}
 		}
 	}
-
 }
 
 // isValidRPM checks if an RPM value is within a plausible range.
@@ -442,10 +484,14 @@ func isValidRPM(val int) bool {
 // releaseAllFansToBios is a utility function for shutdown or panic mode.
 func (fc *FanController) releaseAllFansToBios() {
 	log.Println("Attempting to release all fans to BIOS control...")
-	if fc.config == nil {
+	fc.mutex.RLock()
+	config := fc.config
+	fc.mutex.RUnlock()
+
+	if config == nil {
 		return
 	}
-	for i, fanConfig := range fc.config.FanConfigurations {
+	for i, fanConfig := range config.FanConfigurations {
 		if fanConfig.ResetRequired {
 			log.Printf("Fan %d (%s): Releasing control", i, fanConfig.FanDisplayName)
 			if err := fc.ecDriver.Write(fanConfig.WriteRegister, byte(fanConfig.FanSpeedResetValue)); err != nil {
@@ -457,8 +503,7 @@ func (fc *FanController) releaseAllFansToBios() {
 
 // calculateSpeedForTemp determines fan speed with proper hysteresis.
 func calculateSpeedForTemp(temp float64, lastSpeed int, thresholds []models.TemperatureThreshold) int {
-	// Determine the current speed level based on the last known speed.
-	// This helps us find the correct DownThreshold to use.
+	// ... (rest of the function is unchanged)
 	currentLevelIndex := -1
 	for i, t := range thresholds {
 		if float64(lastSpeed) == t.FanSpeed {
@@ -467,8 +512,6 @@ func calculateSpeedForTemp(temp float64, lastSpeed int, thresholds []models.Temp
 		}
 	}
 
-	// If temperature is rising
-	// Find the highest threshold that the temperature has crossed from below.
 	newSpeed := 0.0
 	for _, t := range thresholds {
 		if temp >= float64(t.UpThreshold) {
@@ -476,26 +519,19 @@ func calculateSpeedForTemp(temp float64, lastSpeed int, thresholds []models.Temp
 		}
 	}
 
-	// If the new speed (from rising temp) is higher than the last speed, we apply it.
 	if newSpeed > float64(lastSpeed) {
 		return int(newSpeed)
 	}
 
-	// If temperature is falling or stable, and we have a current speed level
 	if currentLevelIndex != -1 {
-		// Check if the temperature has dropped below the DownThreshold for the *current* level.
 		currentThreshold := thresholds[currentLevelIndex]
 		if temp < float64(currentThreshold.DownThreshold) {
-			// If it has, we can safely drop to the speed of the *next lower* level.
 			if currentLevelIndex > 0 {
 				return int(thresholds[currentLevelIndex-1].FanSpeed)
 			}
-			return 0 // We were at the lowest level, so now we turn off.
+			return 0
 		}
 	}
-
-	// If none of the above conditions are met, maintain the last speed.
-	// This covers the hysteresis zone (between DownThreshold and UpThreshold).
 	return lastSpeed
 }
 
